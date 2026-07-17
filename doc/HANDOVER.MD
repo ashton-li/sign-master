@@ -23,6 +23,7 @@
 - `npm run build:prod:mp-weixin`：通过，生产包位于 `dist/build/mp-weixin`，AppID 由 `VITE_MP_WEIXIN_APPID` 写入。
 - `MP_STATIC_ONLY=1 npm run test:mp-weixin`：通过，扫描页仅引用同分包 `scanPdf.js`，PDF 生成代码和公众号二维码均已进入 dist。
 - 微信开发者工具自动化本次在工具启动阶段挂起，未进入 18 页页面循环；已终止任务。上一版 18/18 页、4/4 Tab 已通过，本次改动另由生产产物检查覆盖。
+- GitHub CI 首轮发现浏览器任务缺少 H5 构建步骤，已在 Playwright 前增加 `npm run build:h5`，避免静态服务器因目录不存在持续返回 404。
 
 ## 真机复验重点
 
