@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 400" width="500" height="400">
+  <rect width="500" height="400" rx="28" fill="#f3f5fb" />
+  <rect x="24" y="24" width="452" height="352" rx="22" fill="#ffffff" stroke="#e3e6f0" stroke-width="2" />
+  <rect x="48" y="50" width="108" height="30" rx="15" fill="#e9eaff" />
+  <text x="102" y="70" text-anchor="middle" fill="#5856e0" font-family="Arial, sans-serif" font-size="14" font-weight="700">SIGNMASTER</text>
+  <text x="48" y="132" fill="#171923" font-family="Microsoft YaHei, sans-serif" font-size="34" font-weight="800">手机签文件</text>
+  <text x="48" y="180" fill="#171923" font-family="Microsoft YaHei, sans-serif" font-size="34" font-weight="800">就用签字大师</text>
+  <rect x="48" y="214" width="264" height="3" rx="1.5" fill="#32a46f" />
+  <text x="48" y="253" fill="#626779" font-family="Microsoft YaHei, sans-serif" font-size="17">选文件 · 手写签字 · 导出分享</text>
+  <text x="48" y="288" fill="#27875a" font-family="Microsoft YaHei, sans-serif" font-size="16" font-weight="700">文件仅在本机处理</text>
+  <image href="app-logo.svg" x="324" y="70" width="128" height="128" />
+  <rect x="48" y="320" width="404" height="1" fill="#e8eaf1" />
+  <circle cx="60" cy="348" r="5" fill="#5856e0" />
+  <text x="74" y="354" fill="#8b8f9e" font-family="Microsoft YaHei, sans-serif" font-size="14">模板复用 · 常用签字 · 多格式导出</text>
+</svg>

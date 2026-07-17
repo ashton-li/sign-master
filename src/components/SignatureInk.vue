@@ -52,6 +52,27 @@ function render() {
   ctx.draw(false)
 }
 
+async function exportImage() {
+  await nextTick()
+  await new Promise((resolve) => setTimeout(resolve, 40))
+  return new Promise((resolve, reject) => {
+    uni.canvasToTempFilePath({
+      canvasId:props.canvasId,
+      x:0,
+      y:0,
+      width:props.width,
+      height:props.height,
+      destWidth:props.width * 2,
+      destHeight:props.height * 2,
+      fileType:'png',
+      success:({ tempFilePath }) => resolve(tempFilePath),
+      fail:reject
+    }, instance?.proxy)
+  })
+}
+
+defineExpose({ exportImage })
+
 onMounted(() => nextTick(render))
 watch(() => [props.snapshot, props.width, props.height], () => nextTick(render), { deep: true })
 </script>

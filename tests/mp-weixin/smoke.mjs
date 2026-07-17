@@ -27,6 +27,18 @@ assert.match(readFileSync(signLocationJs, 'utf8'), /应用已有签名.*手写�
 assert.match(readFileSync(previewJs, 'utf8'), /value:"jpg",label:"JPEG".*value:"pdf",label:"PDF".*value:"png",label:"PNG"/, '图片导出格式顺序不是 JPEG、PDF、PNG')
 assert.match(readFileSync(previewJs, 'utf8'), /showShareImageMenu/, 'JPEG/PNG 没有使用微信图片分享接口')
 assert.match(readFileSync(previewJs, 'utf8'), /shareFileMessage/, 'PDF 没有保留微信文件分享接口')
+for (const route of ['home', 'templates', 'signatures', 'settings']) {
+  const pageConfig = JSON.parse(readFileSync(new URL(`../../dist/build/mp-weixin/pages/${route}/index.json`, import.meta.url), 'utf8'))
+  assert.equal(pageConfig.enableShareAppMessage, true, `${route} 未开启好友分享`)
+  assert.equal(pageConfig.enableShareTimeline, true, `${route} 未开启朋友圈分享`)
+}
+assert.ok(existsSync(new URL('../../dist/build/mp-weixin/static/share-cover.png', import.meta.url)), '生产包缺少宣传分享封面')
+const signaturesWxml = readFileSync(new URL('../../dist/build/mp-weixin/pages/signatures/index.wxml', import.meta.url), 'utf8')
+const signaturesJs = readFileSync(new URL('../../dist/build/mp-weixin/pages/signatures/index.js', import.meta.url), 'utf8')
+assert.match(signaturesWxml, /preview-share/, '签名预览缺少右上角分享按钮')
+assert.match(signaturesJs, /showShareImageMenu/, '签名预览没有编译图片分享接口')
+const settingsWxml = readFileSync(new URL('../../dist/build/mp-weixin/pages/settings/index.wxml', import.meta.url), 'utf8')
+assert.match(settingsWxml, /open-type="share"/, '推荐面板缺少微信好友分享按钮')
   const scannerMarkup = readFileSync(scannerWxml, 'utf8')
   assert.match(scannerMarkup, /<camera[^>]*\/>.*camera-actions[^>]*>.*capture[^>]*catchtap/s, '扫描器没有保留独立手动拍照按钮')
   assert.doesNotMatch(scannerMarkup, /auto-toggle|scan-finish|重拍上一页/, '相机页仍编译了自动扫描或其他旧按钮')

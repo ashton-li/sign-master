@@ -604,6 +604,25 @@ test('explains sandbox clearing and exposes complete backup recovery', async ({ 
   await expect(page.locator('.action-button.share')).toContainText('发送备份到微信')
 })
 
+test('shows the promotional sharing panel and a filled file empty-state icon', async ({ page }) => {
+  const errors = collectRuntimeErrors(page)
+  const emptyIcon = page.locator('.empty-doc')
+  await expect(emptyIcon).toBeVisible()
+  await expect(emptyIcon).toHaveCSS('background-color', 'rgb(88, 86, 224)')
+
+  await page.locator('.nav-btn').last().click()
+  await page.locator('.setting-row:has(.setting-icon.recommend)').click()
+  await expect(page.locator('.promotion-panel')).toBeVisible()
+  await expect(page.locator('.promotion-cover')).toBeVisible()
+  await expect(page.locator('.promotion-title')).toContainText('签字大师')
+  await expect(page.locator('.promotion-button')).toHaveCount(2)
+  for (const button of await page.locator('.promotion-button').all()) {
+    const box = await button.boundingBox()
+    expect(box.height).toBeGreaterThanOrEqual(48)
+  }
+  expect(errors).toEqual([])
+})
+
 function collectRuntimeErrors(page) {
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))

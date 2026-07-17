@@ -6,6 +6,39 @@ function readText(relativePath) {
 }
 
 describe('mp-weixin compatibility guards', () => {
+  it('enables promotional sharing on every main tab with designed titles and a share panel', () => {
+    const pages = JSON.parse(readText('src/pages.json'))
+    const mainPages = pages.pages.map((page) => page.style)
+    const share = readText('src/composables/useMiniProgramShare.js')
+    const settings = readText('src/pages/settings/index.vue')
+
+    expect(mainPages.every((style) => style.enableShareAppMessage && style.enableShareTimeline)).toBe(true)
+    expect(share).toContain('手机签文件，就用签字大师｜本地处理更安心')
+    expect(share).toContain('onShareAppMessage')
+    expect(share).toContain('onShareTimeline')
+    expect(share).toContain('/static/share-cover.png')
+    expect(readText('src/pages/home/index.vue')).toContain("useMiniProgramShare('home')")
+    expect(readText('src/pages/templates/index.vue')).toContain("useMiniProgramShare('templates')")
+    expect(readText('src/pages/signatures/index.vue')).toContain("useMiniProgramShare('signatures')")
+    expect(settings).toContain("useMiniProgramShare('settings')")
+    expect(settings).toContain('open-type="share"')
+    expect(settings).toContain('分享到朋友圈')
+  })
+
+  it('shares signature previews as real images and uses a filled file-page empty icon', () => {
+    const signatures = readText('src/pages/signatures/index.vue')
+    const signatureInk = readText('src/components/SignatureInk.vue')
+    const home = readText('src/pages/home/index.vue')
+
+    expect(signatures).toContain('class="preview-share"')
+    expect(signatures).toContain('showShareImageMenu')
+    expect(signatures).toContain('handleShareSignature')
+    expect(signatureInk).toContain('defineExpose({ exportImage })')
+    expect(signatureInk).toContain('canvasToTempFilePath')
+    expect(home).toContain('name="signatureLibrary"')
+    expect(home).toContain('background:#5856e0')
+  })
+
   it('keeps real environment values out of source and restores the manifest after builds', () => {
     const ignore = readText('.gitignore')
     const example = readText('.env.example')

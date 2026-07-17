@@ -17,11 +17,13 @@ import { onShow } from '@dcloudio/uni-app'
 import PageShell from '../../components/PageShell.vue'
 import SvgIcon from '../../components/SvgIcon.vue'
 import TemplateCard from '../../components/TemplateCard.vue'
+import { useMiniProgramShare } from '../../composables/useMiniProgramShare'
 import { syncCustomTabBar } from '../../core/navigation/customTabBar'
 import { useTemplatesStore } from '../../stores/templates'
 import { useSignaturesStore } from '../../stores/signatures'
 
 const templatesStore = useTemplatesStore()
+useMiniProgramShare('templates')
 const suppressedTemplateId = ref('')
 let longPressTimer = null
 
