@@ -6,6 +6,22 @@ function readText(relativePath) {
 }
 
 describe('mp-weixin compatibility guards', () => {
+  it('keeps real environment values out of source and restores the manifest after builds', () => {
+    const ignore = readText('.gitignore')
+    const example = readText('.env.example')
+    const manifest = JSON.parse(readText('src/manifest.json'))
+    const packageJson = JSON.parse(readText('package.json'))
+    const runner = readText('scripts/run-mp-weixin.mjs')
+
+    expect(ignore).toContain('.env.*')
+    expect(ignore).toContain('!.env.example')
+    expect(ignore).toContain('*.pem')
+    expect(example).toContain('VITE_MP_WEIXIN_APPID=wx_your_mini_program_appid')
+    expect(manifest['mp-weixin'].appid).toBe('__VITE_MP_WEIXIN_APPID__')
+    expect(packageJson.scripts['build:prod:mp-weixin']).toContain('run-mp-weixin.mjs')
+    expect(runner).toContain("writeFileSync(manifestPath, originalManifest")
+  })
+
   it('does not leave raw Tailwind directives in global WXSS source', () => {
     const wxssSource = readText('src/uni.scss')
 
@@ -27,6 +43,8 @@ describe('mp-weixin compatibility guards', () => {
     expect(sourceFiles).not.toMatch(/appsecret|app_secret/i)
     expect(sourceFiles).not.toMatch(/cloud\.callFunction|signmasterIdentity|wechat-openid/i)
     expect(readText('src/pages/sign/preview.vue')).toContain('shareFileMessage')
+    expect(readText('src/pages/sign/preview.vue')).toContain('showShareImageMenu')
+    expect(readText('src/pages/sign/preview.vue')).toContain("['jpg', 'jpeg', 'png'].includes(exportedFormat.value)")
   })
 
   it('uses a distinct signature-library icon and packages backup recovery', () => {
@@ -123,6 +141,7 @@ describe('mp-weixin compatibility guards', () => {
     expect(about).toContain('<FilingFooter />')
     expect(settings).toContain('<FilingFooter />')
     expect(logo).toContain('/static/app-logo.png')
+    expect(readText('src/static/app-logo.svg')).toContain('<rect width="200" height="200" rx="38"')
     expect(filing).toContain('闽ICP备2026014225号-3X')
     expect(filing).toContain('https://beian.miit.gov.cn/')
     expect(help).not.toContain('<PageShell :tab="false" compact>')

@@ -24,6 +24,8 @@ jobs:
       - run: npm run audit:ci
       - run: npm run ci:check
       - run: npm run build:prod:mp-weixin
+        env:
+          VITE_MP_WEIXIN_APPID: ${{ secrets.VITE_MP_WEIXIN_APPID }}
       - uses: actions/upload-artifact@v4
         with:
           name: mp-weixin-production

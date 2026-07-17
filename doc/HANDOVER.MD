@@ -4,32 +4,33 @@
 
 ## 本次完成
 
-- 修复 iOS 真机完成扫描时 `createScanPdfFromPaths` / `createScanPdfFromPaths` 为 `undefined`：轻量 JPEG-PDF 组装和受管目录保存逻辑直接编译进 `pages/sign/scan.js`，删除运行时 `scanPdf.js` 和 `pdfFileSaver.js` 调用。
-- 扫描预览的每页缩略图支持点击调用微信图片预览；继续扫描、删除、排序、后台裁切和完成扫描流程保持不变。
-- 自动裁边新增高亮低色差纸张连通域检测，通过纸张主体面积、填充率和四边统计恢复 A4 类纸张四角，再进行透视校正；结果不可信时继续回退完整照片。
-- 新增深色背景透视纸张、均匀亮图不误裁两组测试；原有真实回执三签字位 100 次亮度、噪声、平移扰动测试继续通过。
-- 关于页改用用户提供的真实小程序 Logo：`src/static/app-logo.png`。
-- 帮助与反馈页取消固定高度限制，底部反馈内容和安全区可完整滚动查看。
-- “我的”和“关于”页面底部增加 `闽ICP备2026014225号-3X`；H5 打开工信部备案网站，小程序复制备案查询网址。
-- 微信生产包静态门禁新增扫描页内联 PDF、无旧模块引用、缩略图预览事件、真实 Logo、备案号和帮助页滚动断言。
+- 将已跟踪的 `.env.production` 从 Git 索引移除，同时保留本机文件供当前开发使用。
+- 新增 `.env.example`，只包含版本、微信 AppID 和联系邮箱的示例值；`.gitignore` 改为忽略全部 `.env` 文件，仅放行示例文件。
+- 扩充凭据、IDE、系统文件、日志、测试产物、缓存和微信开发者工具私有配置的忽略规则。
+- `src/manifest.json` 的微信 AppID 恢复为占位值；新增微信构建包装器，构建前从环境变量临时注入 AppID，成功、失败或退出时都在 `finally` 中还原源码清单。
+- GitHub Actions 生产构建改为读取 `VITE_MP_WEIXIN_APPID` Secret；仓库 Secret 已配置，不在工作流和日志中暴露值。
+- 基于用户提供的 SVG 保留原配色、纸张、签名笔迹、羽毛笔和装饰元素，仅把圆形外底改为小程序使用的方形圆角底。
+- Logo 源文件保存为 `src/static/app-logo.svg`，并生成 512 × 512 的 `src/static/app-logo.png` 供小程序页面和生产包使用。
+- 修复 JPEG/PNG 分享到微信聊天后显示为不可预览附件：图片格式改用 `wx.showShareImageMenu`，PDF 和加密备份继续使用 `wx.shareFileMessage`。
+- 分享前仍按当前选中格式生成、持久化并写入防伪证据；图片分享使用最终可写目录中的 JPEG/PNG 文件。
 
 ## 验证结果
 
-- `npm run ci:check`：文案、敏感能力、类型检查通过；24 个测试文件、98/98 通过。
-- `npm run build:h5`：通过。
-- `npm run test:e2e`：20/20 通过，新增帮助页底部、真实 Logo 和备案号可见性验收。
-- `npm run build:prod:mp-weixin`：通过，生产包位于 `dist/build/mp-weixin`。
-- `MP_STATIC_ONLY=1 npm run test:mp-weixin`：通过；编译后的扫描页包含 `PDF-1.4`，不引用 `scanPdf.js`、`imagePdf.js` 或 `pdfFileSaver.js`。
+- `npm run audit:ci`：运行时依赖 0 漏洞。
+- `npm run ci:check`：文案、敏感能力、类型检查通过；24 个测试文件、99/99 通过。
+- `npm run build:h5` 与 `npm run test:e2e`：通过，浏览器全流程 20/20。
+- 微信生产构建通过；源码 `manifest.json` 构建后自动恢复占位值，`dist/build/mp-weixin/project.config.json` 写入本机环境 AppID。
+- 微信生产包静态检查通过，确认 JPEG/PNG 编译了图片分享接口，PDF 保留文件分享接口。
+- 环境隔离单元测试通过，覆盖忽略规则、示例文件、清单占位值和构建后还原逻辑。
 
 ## 真机复验重点
 
-- 连续扫描两页后点击“完成扫描”，确认进入选择与定位页，不出现任何 `createScanPdfFromPaths`、`createJpegPdfFromPaths` 或 `createScanPdfFromPaths` 未定义错误。
-- 在深色桌面、浅色桌面、低光和纸张倾斜条件下拍摄，确认预览是有效文档而不是桌面、窄条或未裁原图。
-- 点击任意扫描页缩略图，确认可全屏预览并左右查看多页。
-- 在帮助与反馈页滚动到底部；在“我的”和“关于”页确认备案号可见。
+- 选择 JPEG 和 PNG 后直接点击“分享好友”，确认微信分享菜单显示图片预览，发送到聊天后是可点开的图片消息而不是文件附件。
+- 选择 PDF 后分享，确认仍以文件形式发送并可使用微信文件预览。
+- 在微信开发者工具导入 `dist/build/mp-weixin`，确认新方形 Logo 清晰且没有被系统圆角裁掉主体。
 
 ## 已知边界
 
-- 裁边完全在本地执行，优先避免错误裁切；纸张与背景亮度、颜色几乎相同时可能保留完整照片，由用户重新拍摄可获得更好结果。
-- 小程序无法直接打开任意外部备案网页，点击备案号会复制工信部查询网址，这是微信平台能力限制下的明确降级。
+- `wx.showShareImageMenu` 由微信客户端提供；过旧微信版本会显示升级提示，不回退为会产生附件卡片的文件分享。
+- 历史 Git 提交中曾包含 `.env.production`；本次从当前版本移除且已配置后续防误提交。AppID 本身是公开标识，不是 AppSecret；未执行破坏性的历史重写。
 - Sass 构建仍有上游 legacy API 与 `@import` 弃用警告，不影响生产产物。

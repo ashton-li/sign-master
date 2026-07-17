@@ -199,7 +199,11 @@ function handleExport() {
 
 async function handleShare() {
   // #ifdef MP-WEIXIN
-  if (typeof wx === 'undefined' || typeof wx.shareFileMessage !== 'function') {
+  const imageFormat = ['jpg', 'jpeg', 'png'].includes(signingStore.exportFormat)
+  const supported = typeof wx !== 'undefined' && (imageFormat
+    ? typeof wx.showShareImageMenu === 'function'
+    : typeof wx.shareFileMessage === 'function')
+  if (!supported) {
     uni.showModal({ title: '当前微信版本不支持', content: '请升级微信后使用“分享好友”，或先导出后在文件预览菜单中分享。', showCancel: false })
     return
   }
@@ -223,6 +227,17 @@ async function handleShare() {
 
 function shareCurrentFile() {
   try {
+    if (['jpg', 'jpeg', 'png'].includes(exportedFormat.value)) {
+      wx.showShareImageMenu({
+        path:exportedPath.value,
+        success:() => setStatus('已打开微信图片分享'),
+        fail:(error) => {
+          const message = String(error?.errMsg || error?.message || '')
+          if (!/cancel/i.test(message)) setStatus(`分享失败：${message || '请稍后重试'}`, true)
+        }
+      })
+      return
+    }
     wx.shareFileMessage({
       filePath: exportedPath.value,
       fileName: exportedName.value || signingStore.document?.name || '签署文件',

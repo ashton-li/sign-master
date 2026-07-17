@@ -6,7 +6,7 @@
   "versionCode": "100",
   "transformPx": false,
   "mp-weixin": {
-    "appid": "wxc58b45a697d18a02",
+    "appid": "__VITE_MP_WEIXIN_APPID__",
     "lazyCodeLoading": "requiredComponents",
     "optimization": {
       "subPackages": true

@@ -1,37 +1,76 @@
 # Dependencies
 node_modules/
 .pnpm-store/
+.npm/
+.yarn/
+.yarn-cache/
 
 # Build outputs
 dist/
 unpackage/
 
 # Environment files
-.env.local
-.env.*.local
+.env
+.env.*
+!.env.example
+
+# Credentials and local secrets
+.secrets/
+secrets/
+*.pem
+*.key
+*.p12
+*.pfx
+*.cer
+*.crt
 
 # IDE files
 .vscode/
 .idea/
+.fleet/
+.history/
+.agents/
+memory/
+*.code-workspace
 *.swp
 *.swo
+*.bak
+*.tmp
 
 # OS files
 .DS_Store
 Thumbs.db
+Desktop.ini
 
 # Logs
 *.log
 npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+logs/
 
 # Test artifacts
 coverage/
+.nyc_output/
 test-results/
 playwright-report/
 blob-report/
 output/playwright/
 .playwright-cli/
 tmp/
+temp/
+.temp/
+.cache/
+.vite/
+.turbo/
+*.tsbuildinfo
+.eslintcache
+.stylelintcache
+*.pid
+*.pid.lock
 
 # uni-app
 src/uni_modules/
+project.private.config.json
+project.local.config.json

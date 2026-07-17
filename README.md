@@ -20,9 +20,12 @@
 
 ```bash
 npm install
+cp .env.example .env.local
 npm run dev:h5
 npm run dev:mp-weixin
 ```
+
+Windows PowerShell 可使用 `Copy-Item .env.example .env.local`。请在本机环境文件中填写 `VITE_MP_WEIXIN_APPID`；除 `.env.example` 外，所有 `.env` 文件均被 Git 忽略。
 
 ## 构建
 
@@ -37,7 +40,7 @@ npm run build:prod:mp-weixin
 dist/build/mp-weixin
 ```
 
-用微信开发者工具导入该目录即可预览。`build:prod:mp-weixin` 会先读取 `.env.production` 中的 `VITE_MP_WEIXIN_APPID`，并同步写入 `src/manifest.json`，最终生成的 `project.config.json` 会带上对应 appid。
+用微信开发者工具导入该目录即可预览。`build:prod:mp-weixin` 从进程环境、`.env.local` 或 `.env.production` 读取 `VITE_MP_WEIXIN_APPID`，构建前临时写入 AppID，构建结束后自动将 `src/manifest.json` 还原为占位值。远程 CI 从 GitHub Actions Secret 读取 AppID。
 
 ## 测试
 

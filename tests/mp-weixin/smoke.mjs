@@ -25,6 +25,8 @@ assert.match(readFileSync(signLocationWxml, 'utf8'), /skip-analysis-cover[^>]*ca
 assert.match(readFileSync(signLocationWxml, 'utf8'), /slot-highlight[^>]*catchtouchend[^>]*catchtap/, '识别签字位缺少微信真机触摸和点击事件')
 assert.match(readFileSync(signLocationJs, 'utf8'), /应用已有签名.*手写签名/, '识别签字位没有编译已有签名和手写选择')
 assert.match(readFileSync(previewJs, 'utf8'), /value:"jpg",label:"JPEG".*value:"pdf",label:"PDF".*value:"png",label:"PNG"/, '图片导出格式顺序不是 JPEG、PDF、PNG')
+assert.match(readFileSync(previewJs, 'utf8'), /showShareImageMenu/, 'JPEG/PNG 没有使用微信图片分享接口')
+assert.match(readFileSync(previewJs, 'utf8'), /shareFileMessage/, 'PDF 没有保留微信文件分享接口')
   const scannerMarkup = readFileSync(scannerWxml, 'utf8')
   assert.match(scannerMarkup, /<camera[^>]*\/>.*camera-actions[^>]*>.*capture[^>]*catchtap/s, '扫描器没有保留独立手动拍照按钮')
   assert.doesNotMatch(scannerMarkup, /auto-toggle|scan-finish|重拍上一页/, '相机页仍编译了自动扫描或其他旧按钮')
