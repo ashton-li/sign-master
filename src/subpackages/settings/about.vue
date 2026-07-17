@@ -19,12 +19,14 @@
       </view>
       <button class="support-link" @click="handleSupport">帮助与反馈</button>
       <view class="about-meta"><text>版本 {{ version }}</text><text>本地处理 · 加密备份 · 离线签字</text></view>
+      <FilingFooter />
     </view>
   </PageShell>
 </template>
 
 <script setup>
 import AppLogo from '../../components/AppLogo.vue'
+import FilingFooter from '../../components/FilingFooter.vue'
 import PageShell from '../../components/PageShell.vue'
 
 const version = import.meta.env.VITE_APP_VERSION || '1.0.0'

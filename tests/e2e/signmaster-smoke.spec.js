@@ -511,6 +511,24 @@ test('uses the same full page width for capacity management', async ({ page }) =
   expect(usageBox.x).toBeLessThanOrEqual(19)
 })
 
+test('keeps support content reachable and shows the exact app identity and filing number', async ({ page }) => {
+  await page.goto('/#/subpackages/settings/help')
+  const feedback = page.locator('.feedback')
+  await feedback.scrollIntoViewIfNeeded()
+  await expect(feedback).toBeVisible()
+  await expect(feedback.locator('.feedback-button')).toContainText('复制反馈内容')
+  await expect(feedback.locator('.feedback-button')).toBeVisible()
+
+  await page.goto('/#/subpackages/settings/about')
+  await expect(page.locator('.app-logo img')).toHaveAttribute('src', /static\/app-logo\.png/)
+  await expect(page.getByText('闽ICP备2026014225号-3X', { exact:true })).toBeVisible()
+
+  await page.goto('/#/pages/settings/index')
+  const filing = page.getByText('闽ICP备2026014225号-3X', { exact:true })
+  await filing.scrollIntoViewIfNeeded()
+  await expect(filing).toBeVisible()
+})
+
 test('adds an existing signature by long-pressing the selection document', async ({ page }) => {
   await page.evaluate(() => {
     const points = Array.from({ length: 18 }, (_, index) => ({ x:40 + index * 15, y:90 + Math.sin(index / 2) * 20, pressure:.5, t:index * 16 }))

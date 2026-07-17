@@ -13,6 +13,7 @@
       <button class="setting-row" :disabled="navigating" @click="handleNavigate('/subpackages/settings/privacy')"><view class="setting-left"><view class="setting-icon lock"><SvgIcon name="lock" :size="18" /></view><text class="setting-title">隐私说明</text></view><text class="chevron">›</text></button>
     </view>
     <view class="data-note"><text>数据不上传服务器；清除小程序数据前请先生成完整备份。</text></view>
+    <FilingFooter />
   </PageShell>
 </template>
 
@@ -20,6 +21,7 @@
 import { ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import PageShell from '../../components/PageShell.vue'
+import FilingFooter from '../../components/FilingFooter.vue'
 import SvgIcon from '../../components/SvgIcon.vue'
 import { syncCustomTabBar } from '../../core/navigation/customTabBar'
 import { readLocal, writeLocal } from '../../core/storage/localRepository'

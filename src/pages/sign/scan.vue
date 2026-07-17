@@ -40,7 +40,7 @@
           :key="page.id || page.path"
           :class="['page-card',{ dragging:draggingIndex === index, target:dragTarget === index && draggingIndex !== index }]"
         >
-          <view class="page-thumb">
+          <view class="page-thumb" @click.stop="handlePreview(index)">
             <image :src="page.path" mode="aspectFill" />
             <view v-if="page.status !== 'done'" :class="['crop-progress', page.status]"><text>{{ page.status === 'error' ? '!' : `${page.progress || 0}%` }}</text></view>
           </view>
@@ -75,8 +75,7 @@ import { computed, getCurrentInstance, nextTick, ref } from 'vue'
 import { onLoad, onReady, onUnload } from '@dcloudio/uni-app'
 import SvgIcon from '../../components/SvgIcon.vue'
 import { useTheme } from '../../composables/useTheme'
-import { createScanPdfFromPaths } from './scanPdf'
-import { savePdfBytes } from '../../core/export/pdfFileSaver'
+import { ensureWriteCapacity, fileSize } from '../../core/storage/capacity'
 import { moveScanPage } from '../../core/file/scanPages'
 import { discardTemporaryDocument, persistLocalFile, pickDocumentSource, removeManagedFile } from '../../core/file/sourcePicker'
 import { scanDocumentImage } from '../../core/vision/documentScanner'
@@ -97,6 +96,124 @@ let cancelled = false
 let scanCompleted = false
 let cropQueue = Promise.resolve()
 const scanSources = new Map()
+
+function ascii(value) {
+  const output = new Uint8Array(value.length)
+  for (let index = 0; index < value.length; index += 1) output[index] = value.charCodeAt(index) & 0xff
+  return output
+}
+
+function joinBytes(parts) {
+  const output = new Uint8Array(parts.reduce((total, part) => total + part.length, 0))
+  let offset = 0
+  parts.forEach((part) => {
+    output.set(part, offset)
+    offset += part.length
+  })
+  return output
+}
+
+function jpegDimensions(bytes) {
+  if (bytes.length < 12 || bytes[0] !== 0xff || bytes[1] !== 0xd8) throw new Error('扫描页不是有效的 JPEG 图片')
+  let offset = 2
+  while (offset + 9 < bytes.length) {
+    if (bytes[offset] !== 0xff) { offset += 1; continue }
+    while (bytes[offset] === 0xff) offset += 1
+    const marker = bytes[offset]
+    offset += 1
+    if (marker === 0xd8 || marker === 0xd9) continue
+    if (offset + 1 >= bytes.length) break
+    const size = (bytes[offset] << 8) | bytes[offset + 1]
+    if (size < 2 || offset + size > bytes.length) break
+    if (marker >= 0xc0 && marker <= 0xc3) {
+      return { width:(bytes[offset + 5] << 8) | bytes[offset + 6], height:(bytes[offset + 3] << 8) | bytes[offset + 4] }
+    }
+    offset += size
+  }
+  throw new Error('无法读取扫描页尺寸')
+}
+
+function createScanPdf(jpegPages) {
+  if (!jpegPages.length) throw new Error('扫描页为空')
+  const pages = jpegPages.map((bytes) => {
+    const size = jpegDimensions(bytes)
+    const landscape = size.width > size.height
+    const pageWidth = landscape ? 842 : 595
+    const pageHeight = landscape ? 595 : 842
+    const scale = Math.min(pageWidth / size.width, pageHeight / size.height)
+    return { bytes, ...size, pageWidth, pageHeight, drawWidth:size.width * scale, drawHeight:size.height * scale }
+  })
+  const header = ascii('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n')
+  const objects = []
+  const pageIds = pages.map((_, index) => 3 + index * 3)
+  objects.push(ascii('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n'))
+  objects.push(ascii(`2 0 obj\n<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(' ')}] /Count ${pages.length} >>\nendobj\n`))
+  pages.forEach((page, index) => {
+    const pageId = pageIds[index]
+    const imageId = pageId + 1
+    const contentId = pageId + 2
+    const number = (value) => Number(value.toFixed(2)).toString()
+    const x = (page.pageWidth - page.drawWidth) / 2
+    const y = (page.pageHeight - page.drawHeight) / 2
+    const content = `q\n${number(page.drawWidth)} 0 0 ${number(page.drawHeight)} ${number(x)} ${number(y)} cm\n/Im${index + 1} Do\nQ\n`
+    objects.push(ascii(`${pageId} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${page.pageWidth} ${page.pageHeight}] /Resources << /XObject << /Im${index + 1} ${imageId} 0 R >> >> /Contents ${contentId} 0 R >>\nendobj\n`))
+    objects.push(joinBytes([
+      ascii(`${imageId} 0 obj\n<< /Type /XObject /Subtype /Image /Width ${page.width} /Height ${page.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${page.bytes.length} >>\nstream\n`),
+      page.bytes,
+      ascii('\nendstream\nendobj\n')
+    ]))
+    objects.push(ascii(`${contentId} 0 obj\n<< /Length ${ascii(content).length} >>\nstream\n${content}endstream\nendobj\n`))
+  })
+  let offset = header.length
+  const xref = ['0000000000 65535 f \n']
+  objects.forEach((object) => {
+    xref.push(`${String(offset).padStart(10, '0')} 00000 n \n`)
+    offset += object.length
+  })
+  return joinBytes([header, ...objects, ascii(`xref\n0 ${xref.length}\n${xref.join('')}trailer\n<< /Size ${xref.length} /Root 1 0 R >>\nstartxref\n${offset}\n%%EOF`)])
+}
+
+async function readScanJpeg(path) {
+  // #ifdef MP-WEIXIN
+  return new Promise((resolve, reject) => {
+    wx.getFileSystemManager().readFile({
+      filePath:path,
+      success:({ data }) => resolve(data instanceof Uint8Array ? data : new Uint8Array(data)),
+      fail:reject
+    })
+  })
+  // #endif
+  // #ifndef MP-WEIXIN
+  const response = await fetch(path)
+  if (!response.ok) throw new Error(`无法读取扫描页：${response.status}`)
+  return new Uint8Array(await response.arrayBuffer())
+  // #endif
+}
+
+async function createScanPdfFromPathsInline(paths) {
+  const pages = []
+  for (const path of paths) pages.push(await readScanJpeg(path))
+  return createScanPdf(pages)
+}
+
+async function saveScanPdfBytes(bytes, fileName) {
+  // #ifdef MP-WEIXIN
+  const fs = wx.getFileSystemManager()
+  const directory = `${wx.env.USER_DATA_PATH}/sign-master/temporary`
+  const filePath = `${directory}/${fileName}`
+  await ensureWriteCapacity(bytes.byteLength, { uniApi:uni, replacementBytes:fileSize(filePath, fs) })
+  try { fs.accessSync(directory) } catch { fs.mkdirSync(directory, true) }
+  return new Promise((resolve, reject) => fs.writeFile({
+    filePath,
+    data:bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+    success:() => resolve(filePath),
+    fail:reject
+  }))
+  // #endif
+  // #ifndef MP-WEIXIN
+  return URL.createObjectURL(new Blob([bytes], { type:'application/pdf' }))
+  // #endif
+}
 
 const pendingCropCount = computed(() => scannedPages.value.filter((page) => page.status === 'queued' || page.status === 'processing').length)
 const failedCropCount = computed(() => scannedPages.value.filter((page) => page.status === 'error').length)
@@ -262,6 +379,12 @@ function handleDelete(index) {
   if (!scannedPages.value.length) handleContinueScan()
 }
 
+function handlePreview(index) {
+  const urls = scannedPages.value.map((page) => page.path).filter(Boolean)
+  if (!urls.length) return
+  uni.previewImage({ urls, current:scannedPages.value[index]?.path || urls[0] })
+}
+
 function touchY(event) {
   return Number(event?.touches?.[0]?.clientY ?? event?.changedTouches?.[0]?.clientY ?? event?.clientY ?? 0)
 }
@@ -298,10 +421,10 @@ async function handleFinish() {
     if (cancelled) return
     if (failedCropCount.value) return
     const pages = [...scannedPages.value]
-    const pdfBytes = await createScanPdfFromPaths(pages.map((page) => page.path))
+    const pdfBytes = await createScanPdfFromPathsInline(pages.map((page) => page.path))
     const first = pages[0]
     const pdfName = `扫描文稿-${new Date().toISOString().slice(0,10)}.pdf`
-    const scanPdfPath = await savePdfBytes(pdfBytes, pdfName, { download:false, category:'temporary' })
+    const scanPdfPath = await saveScanPdfBytes(pdfBytes, pdfName)
     if (!cancelled) {
       scanCompleted = true
       eventChannel?.emit('scanComplete', {

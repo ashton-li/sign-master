@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { PNG } from 'pngjs'
-import { analyzeDocumentImage, detectDocumentBounds, detectSignatureLines, stabilizeDocumentQuad, warpPerspectivePixels, warpPerspectivePixelsAsync } from '../../src/core/vision/documentScanner'
+import { analyzeDocumentImage, detectDocumentBounds, detectPaperQuad, detectSignatureLines, stabilizeDocumentQuad, warpPerspectivePixels, warpPerspectivePixelsAsync } from '../../src/core/vision/documentScanner'
 
 function image(width, height, color = 230) {
   const data = new Uint8ClampedArray(width * height * 4)
@@ -64,6 +64,34 @@ describe('document scanner', () => {
     expect(result.confidence).toBe(0)
     expect(result.topLeft).toEqual({ x:0, y:0 })
     expect(result.bottomRight).toEqual({ x:799, y:899 })
+  })
+
+  it('finds an A4-like bright page on a dark photographed background', () => {
+    const width = 320
+    const height = 480
+    const data = image(width, height, 42)
+    for (let y = 54; y <= 430; y += 1) {
+      const progress = (y - 54) / (430 - 54)
+      const left = Math.round(70 + (40 - 70) * progress)
+      const right = Math.round(250 + (280 - 250) * progress)
+      line(data, width, y, left, right, 242)
+    }
+    for (let y = 105; y < 390; y += 28) line(data, width, y, 92, 228, 65)
+
+    const quad = detectPaperQuad(data, width, height)
+    expect(quad.confidence).toBeGreaterThan(0.6)
+    expect(quad.method).toBe('paper-luma')
+    expect(quad.topLeft.x).toBeGreaterThanOrEqual(60)
+    expect(quad.topLeft.x).toBeLessThanOrEqual(82)
+    expect(quad.topLeft.y).toBeGreaterThanOrEqual(48)
+    expect(quad.topRight.x).toBeGreaterThanOrEqual(238)
+    expect(quad.bottomLeft.x).toBeLessThanOrEqual(52)
+    expect(quad.bottomRight.x).toBeGreaterThanOrEqual(268)
+    expect(stabilizeDocumentQuad(quad, width, height).confidence).toBeGreaterThan(0)
+  })
+
+  it('does not crop a uniformly bright photo without a distinct paper region', () => {
+    expect(detectPaperQuad(image(160, 220, 245), 160, 220).confidence).toBe(0)
   })
 
   it('detects three labeled underlines and ignores a line that is already filled', () => {

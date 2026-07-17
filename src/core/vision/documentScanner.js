@@ -4,6 +4,142 @@ function luminance(data, offset) {
   return data[offset] * 0.299 + data[offset + 1] * 0.587 + data[offset + 2] * 0.114
 }
 
+function median(values) {
+  if (!values.length) return 0
+  const sorted = [...values].sort((a, b) => a - b)
+  const middle = Math.floor(sorted.length / 2)
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2
+}
+
+function emptyPaperQuad(width, height) {
+  return {
+    topLeft:{ x:0, y:0 }, topRight:{ x:width - 1, y:0 },
+    bottomRight:{ x:width - 1, y:height - 1 }, bottomLeft:{ x:0, y:height - 1 },
+    confidence:0,
+    method:'paper-luma'
+  }
+}
+
+export function detectPaperQuad(imageData, width, height) {
+  if (!imageData?.length || width < 24 || height < 24) return emptyPaperQuad(width, height)
+  const sampleStep = Math.max(1, Math.ceil(Math.max(width, height) / 180))
+  const gridWidth = Math.ceil(width / sampleStep)
+  const gridHeight = Math.ceil(height / sampleStep)
+  const luma = new Uint8Array(gridWidth * gridHeight)
+  const chroma = new Uint8Array(gridWidth * gridHeight)
+  const border = []
+
+  for (let gy = 0; gy < gridHeight; gy += 1) {
+    const y = Math.min(height - 1, gy * sampleStep)
+    for (let gx = 0; gx < gridWidth; gx += 1) {
+      const x = Math.min(width - 1, gx * sampleStep)
+      const sourceOffset = (y * width + x) * 4
+      const index = gy * gridWidth + gx
+      const red = imageData[sourceOffset]
+      const green = imageData[sourceOffset + 1]
+      const blue = imageData[sourceOffset + 2]
+      luma[index] = Math.round(red * 0.299 + green * 0.587 + blue * 0.114)
+      chroma[index] = Math.max(red, green, blue) - Math.min(red, green, blue)
+      if (gx < 2 || gy < 2 || gx >= gridWidth - 2 || gy >= gridHeight - 2) border.push(luma[index])
+    }
+  }
+
+  const background = median(border)
+  const threshold = Math.max(132, Math.min(238, background + 18))
+  const mask = new Uint8Array(gridWidth * gridHeight)
+  for (let index = 0; index < mask.length; index += 1) {
+    mask[index] = luma[index] >= threshold && chroma[index] <= 78 ? 1 : 0
+  }
+
+  const labels = new Int32Array(mask.length)
+  labels.fill(-1)
+  const queue = new Int32Array(mask.length)
+  const components = []
+  let label = 0
+  for (let start = 0; start < mask.length; start += 1) {
+    if (!mask[start] || labels[start] !== -1) continue
+    let head = 0
+    let tail = 0
+    queue[tail++] = start
+    labels[start] = label
+    let count = 0
+    let minX = gridWidth
+    let minY = gridHeight
+    let maxX = 0
+    let maxY = 0
+    while (head < tail) {
+      const current = queue[head++]
+      const x = current % gridWidth
+      const y = Math.floor(current / gridWidth)
+      count += 1
+      minX = Math.min(minX, x); maxX = Math.max(maxX, x)
+      minY = Math.min(minY, y); maxY = Math.max(maxY, y)
+      const neighbors = [current - 1, current + 1, current - gridWidth, current + gridWidth]
+      for (const next of neighbors) {
+        if (next < 0 || next >= mask.length || !mask[next] || labels[next] !== -1) continue
+        const nextX = next % gridWidth
+        if (Math.abs(nextX - x) > 1) continue
+        labels[next] = label
+        queue[tail++] = next
+      }
+    }
+    components.push({ label, count, minX, minY, maxX, maxY })
+    label += 1
+  }
+
+  const component = components
+    .map((item) => {
+      const boxArea = (item.maxX - item.minX + 1) * (item.maxY - item.minY + 1)
+      const areaRatio = item.count / mask.length
+      const boxRatio = boxArea / mask.length
+      const fill = item.count / boxArea
+      const touches = Number(item.minX === 0) + Number(item.minY === 0) + Number(item.maxX === gridWidth - 1) + Number(item.maxY === gridHeight - 1)
+      const score = item.count * fill * (touches >= 3 ? 0.18 : 1)
+      return { ...item, areaRatio, boxRatio, fill, touches, score }
+    })
+    .filter((item) => item.areaRatio >= 0.07 && item.boxRatio >= 0.12 && item.boxRatio <= 0.96 && item.fill >= 0.38)
+    .sort((a, b) => b.score - a.score)[0]
+  if (!component) return emptyPaperQuad(width, height)
+
+  const rowLeft = new Array(gridHeight).fill(Infinity)
+  const rowRight = new Array(gridHeight).fill(-Infinity)
+  const columnTop = new Array(gridWidth).fill(Infinity)
+  const columnBottom = new Array(gridWidth).fill(-Infinity)
+  for (let index = 0; index < labels.length; index += 1) {
+    if (labels[index] !== component.label) continue
+    const x = index % gridWidth
+    const y = Math.floor(index / gridWidth)
+    rowLeft[y] = Math.min(rowLeft[y], x); rowRight[y] = Math.max(rowRight[y], x)
+    columnTop[x] = Math.min(columnTop[x], y); columnBottom[x] = Math.max(columnBottom[x], y)
+  }
+  const boxWidth = component.maxX - component.minX + 1
+  const boxHeight = component.maxY - component.minY + 1
+  const xBand = Math.max(2, Math.round(boxWidth * 0.14))
+  const yBand = Math.max(2, Math.round(boxHeight * 0.14))
+  const valid = (value) => Number.isFinite(value) && value >= 0
+  const values = (items, from, to) => items.slice(Math.max(0, from), Math.min(items.length, to)).filter(valid)
+  const toSourceX = (value) => Math.max(0, Math.min(width - 1, Math.round(value * sampleStep)))
+  const toSourceY = (value) => Math.max(0, Math.min(height - 1, Math.round(value * sampleStep)))
+  const topLeft = {
+    x:toSourceX(median(values(rowLeft, component.minY, component.minY + yBand))),
+    y:toSourceY(median(values(columnTop, component.minX, component.minX + xBand)))
+  }
+  const topRight = {
+    x:toSourceX(median(values(rowRight, component.minY, component.minY + yBand))),
+    y:toSourceY(median(values(columnTop, component.maxX - xBand + 1, component.maxX + 1)))
+  }
+  const bottomLeft = {
+    x:toSourceX(median(values(rowLeft, component.maxY - yBand + 1, component.maxY + 1))),
+    y:toSourceY(median(values(columnBottom, component.minX, component.minX + xBand)))
+  }
+  const bottomRight = {
+    x:toSourceX(median(values(rowRight, component.maxY - yBand + 1, component.maxY + 1))),
+    y:toSourceY(median(values(columnBottom, component.maxX - xBand + 1, component.maxX + 1)))
+  }
+  const confidence = Math.min(0.98, 0.45 + component.fill * 0.3 + Math.min(0.2, component.areaRatio))
+  return { topLeft, topRight, bottomRight, bottomLeft, confidence, method:'paper-luma' }
+}
+
 function edgeScore(data, width, x, y) {
   const left = (y * width + Math.max(0, x - 2)) * 4
   const right = (y * width + Math.min(width - 1, x + 2)) * 4
@@ -123,10 +259,11 @@ export function stabilizeDocumentQuad(quad, width, height) {
   const naturalHeight = Math.max(leftHeight, rightHeight)
   const estimatedArea = ((topWidth + bottomWidth) / 2) * ((leftHeight + rightHeight) / 2)
   const compactness = Math.min(naturalWidth, naturalHeight) / Math.max(naturalWidth, naturalHeight)
-  const reliable = naturalWidth >= width * 0.52
-    && naturalHeight >= height * 0.42
-    && estimatedArea >= width * height * 0.3
-    && compactness >= 0.34
+  const paperLuma = quad.method === 'paper-luma'
+  const reliable = naturalWidth >= width * (paperLuma ? 0.34 : 0.52)
+    && naturalHeight >= height * (paperLuma ? 0.34 : 0.42)
+    && estimatedArea >= width * height * (paperLuma ? 0.12 : 0.3)
+    && compactness >= (paperLuma ? 0.28 : 0.34)
   return reliable ? quad : fullImageQuad(width, height)
 }
 
@@ -469,7 +606,8 @@ async function scanDocumentImageInBrowser(file, options = {}) {
     return { ...file, width, height, detectedSlots:sourceSlots, kind:'image', detectionSpace:'source' }
   }
   const bounds = detectDocumentBounds(source.data, width, height)
-  const quad = stabilizeDocumentQuad(detectDocumentQuad(source.data, width, height, bounds), width, height)
+  const paperQuad = detectPaperQuad(source.data, width, height)
+  const quad = stabilizeDocumentQuad(paperQuad.confidence ? paperQuad : detectDocumentQuad(source.data, width, height, bounds), width, height)
   reportProgress(options, 46, '识别边沿')
   const warped = options.yieldToUi
     ? await warpPerspectivePixelsAsync(source.data, width, height, quad, maxDimension, options)
@@ -539,7 +677,8 @@ export async function scanDocumentImage(file, options = {}) {
     return { ...file, width:sourceWidth, height:sourceHeight, scanCrop:cropped.crop, detectedSlots:sourceSlots, detectionSpace:'source', kind:'image' }
   }
   const bounds = detectDocumentBounds(sourceData, sourceWidth, sourceHeight)
-  const quad = stabilizeDocumentQuad(detectDocumentQuad(sourceData, sourceWidth, sourceHeight, bounds), sourceWidth, sourceHeight)
+  const paperQuad = detectPaperQuad(sourceData, sourceWidth, sourceHeight)
+  const quad = stabilizeDocumentQuad(paperQuad.confidence ? paperQuad : detectDocumentQuad(sourceData, sourceWidth, sourceHeight, bounds), sourceWidth, sourceHeight)
   reportProgress(options, 46, '识别边沿')
   const warped = options.yieldToUi
     ? await warpPerspectivePixelsAsync(sourceData, sourceWidth, sourceHeight, quad, maxDimension, options)
