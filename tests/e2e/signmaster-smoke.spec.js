@@ -614,9 +614,15 @@ test('keeps both home entry animations active and removes the settings recommend
     logoHalo: getComputedStyle(document.querySelector('.brand-halo'), '::before').animationName,
     logo: getComputedStyle(document.querySelector('.brand-halo .app-logo')).animationName,
     emptyHalo: getComputedStyle(document.querySelector('.empty-pulse'), '::before').animationName,
-    emptyIcon: getComputedStyle(document.querySelector('.empty-doc')).animationName
+    emptyIcon: getComputedStyle(document.querySelector('.empty-doc')).animationName,
+    arrow: getComputedStyle(document.querySelector('.guide-arrow')).animationName
   }))
-  expect(Object.values(animations).every((name) => name && name !== 'none')).toBe(true)
+  expect(animations.logoHalo).not.toBe('none')
+  expect(animations.logo).not.toBe('none')
+  expect(animations.emptyHalo).not.toBe('none')
+  expect(animations.emptyIcon).toBe('none')
+  expect(animations.arrow).not.toBe('none')
+  await expect(page.locator('.guide-arrow')).toBeVisible()
 
   await page.locator('.nav-btn').last().click()
   await expect(page.locator('.setting-icon.recommend')).toHaveCount(0)

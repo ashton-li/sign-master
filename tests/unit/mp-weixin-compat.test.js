@@ -38,7 +38,9 @@ describe('mp-weixin compatibility guards', () => {
     expect(home).toContain('name="signatureLibrary"')
     expect(home).toContain('background:#5856e0')
     expect(home).toContain('animation:brandHalo')
-    expect(home).toContain('animation:emptyFloat')
+    expect(home).toContain('aria-label="指向下方签署按钮"')
+    expect(home).toContain('.empty-doc{transform:none}')
+    expect(home).not.toContain('animation:emptyFloat')
   })
 
   it('keeps real environment values out of source and restores the manifest after builds', () => {
