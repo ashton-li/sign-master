@@ -6,23 +6,23 @@ function readText(relativePath) {
 }
 
 describe('mp-weixin compatibility guards', () => {
-  it('enables promotional sharing on every main tab with designed titles and a share panel', () => {
+  it('registers designed friend and timeline shares directly on every main tab', () => {
     const pages = JSON.parse(readText('src/pages.json'))
     const mainPages = pages.pages.map((page) => page.style)
     const share = readText('src/composables/useMiniProgramShare.js')
     const settings = readText('src/pages/settings/index.vue')
 
     expect(mainPages.every((style) => style.enableShareAppMessage && style.enableShareTimeline)).toBe(true)
-    expect(share).toContain('手机签文件，就用签字大师｜本地处理更安心')
-    expect(share).toContain('onShareAppMessage')
-    expect(share).toContain('onShareTimeline')
+    expect(share).toContain('签字大师｜手机签文件，三步轻松完成')
     expect(share).toContain('/static/share-cover.png')
-    expect(readText('src/pages/home/index.vue')).toContain("useMiniProgramShare('home')")
-    expect(readText('src/pages/templates/index.vue')).toContain("useMiniProgramShare('templates')")
-    expect(readText('src/pages/signatures/index.vue')).toContain("useMiniProgramShare('signatures')")
-    expect(settings).toContain("useMiniProgramShare('settings')")
-    expect(settings).toContain('open-type="share"')
-    expect(settings).toContain('分享到朋友圈')
+    for (const route of ['home', 'templates', 'signatures', 'settings']) {
+      const page = readText(`src/pages/${route}/index.vue`)
+      expect(page).toContain(`useMiniProgramShare('${route}')`)
+      expect(page).toContain('onShareAppMessage(miniProgramShare.friendShare)')
+      expect(page).toContain('onShareTimeline(miniProgramShare.timelineShare)')
+    }
+    expect(settings).not.toContain('推荐签字大师')
+    expect(settings).not.toContain('promotion-panel')
   })
 
   it('shares signature previews as real images and uses a filled file-page empty icon', () => {
@@ -37,6 +37,8 @@ describe('mp-weixin compatibility guards', () => {
     expect(signatureInk).toContain('canvasToTempFilePath')
     expect(home).toContain('name="signatureLibrary"')
     expect(home).toContain('background:#5856e0')
+    expect(home).toContain('animation:brandHalo')
+    expect(home).toContain('animation:emptyFloat')
   })
 
   it('keeps real environment values out of source and restores the manifest after builds', () => {

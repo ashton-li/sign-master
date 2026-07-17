@@ -604,22 +604,23 @@ test('explains sandbox clearing and exposes complete backup recovery', async ({ 
   await expect(page.locator('.action-button.share')).toContainText('发送备份到微信')
 })
 
-test('shows the promotional sharing panel and a filled file empty-state icon', async ({ page }) => {
+test('keeps both home entry animations active and removes the settings recommendation row', async ({ page }) => {
   const errors = collectRuntimeErrors(page)
   const emptyIcon = page.locator('.empty-doc')
   await expect(emptyIcon).toBeVisible()
   await expect(emptyIcon).toHaveCSS('background-color', 'rgb(88, 86, 224)')
 
+  const animations = await page.evaluate(() => ({
+    logoHalo: getComputedStyle(document.querySelector('.brand-halo'), '::before').animationName,
+    logo: getComputedStyle(document.querySelector('.brand-halo .app-logo')).animationName,
+    emptyHalo: getComputedStyle(document.querySelector('.empty-pulse'), '::before').animationName,
+    emptyIcon: getComputedStyle(document.querySelector('.empty-doc')).animationName
+  }))
+  expect(Object.values(animations).every((name) => name && name !== 'none')).toBe(true)
+
   await page.locator('.nav-btn').last().click()
-  await page.locator('.setting-row:has(.setting-icon.recommend)').click()
-  await expect(page.locator('.promotion-panel')).toBeVisible()
-  await expect(page.locator('.promotion-cover')).toBeVisible()
-  await expect(page.locator('.promotion-title')).toContainText('签字大师')
-  await expect(page.locator('.promotion-button')).toHaveCount(2)
-  for (const button of await page.locator('.promotion-button').all()) {
-    const box = await button.boundingBox()
-    expect(box.height).toBeGreaterThanOrEqual(48)
-  }
+  await expect(page.locator('.setting-icon.recommend')).toHaveCount(0)
+  await expect(page.locator('.promotion-panel')).toHaveCount(0)
   expect(errors).toEqual([])
 })
 

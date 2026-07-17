@@ -13,7 +13,7 @@
 
 <script setup>
 import { ref } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
+import { onShareAppMessage, onShareTimeline, onShow } from '@dcloudio/uni-app'
 import PageShell from '../../components/PageShell.vue'
 import SvgIcon from '../../components/SvgIcon.vue'
 import TemplateCard from '../../components/TemplateCard.vue'
@@ -23,9 +23,12 @@ import { useTemplatesStore } from '../../stores/templates'
 import { useSignaturesStore } from '../../stores/signatures'
 
 const templatesStore = useTemplatesStore()
-useMiniProgramShare('templates')
+const miniProgramShare = useMiniProgramShare('templates')
 const suppressedTemplateId = ref('')
 let longPressTimer = null
+
+onShareAppMessage(miniProgramShare.friendShare)
+onShareTimeline(miniProgramShare.timelineShare)
 
 onShow(() => syncCustomTabBar(1))
 

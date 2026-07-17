@@ -1,23 +1,23 @@
-import { onLoad, onShareAppMessage, onShareTimeline, onShow } from '@dcloudio/uni-app'
+import { onLoad, onShow } from '@dcloudio/uni-app'
 
 const SHARE_IMAGE = '/static/share-cover.png'
 const SHARE_PATH = '/pages/home/index?from=share'
 const SHARE_CONFIG = {
   home: {
-    friendTitle:'手机签文件，就用签字大师｜本地处理更安心',
-    timelineTitle:'我在用签字大师，手机上就能手写签文件'
+    friendTitle:'签字大师｜手机签文件，三步轻松完成',
+    timelineTitle:'手机签文件不用打印，签字大师三步完成'
   },
   templates: {
-    friendTitle:'常用文件一键复用｜签字大师让签署更省时',
-    timelineTitle:'常用签署模板，手机一键复用更方便'
+    friendTitle:'签字大师｜常用文件一键套用，签署更省时',
+    timelineTitle:'常用文件一键套用，手机签署更省时'
   },
   signatures: {
-    friendTitle:'保存常用签字，随时快速签｜签字大师',
-    timelineTitle:'手写签字随身保存，签文件更方便'
+    friendTitle:'签字大师｜保存常用签名，随时快速签文件',
+    timelineTitle:'保存常用签名，手机签文件更方便'
   },
   settings: {
-    friendTitle:'纯本地电子签署工具｜签字大师',
-    timelineTitle:'推荐一个纯本地处理的电子签署小程序'
+    friendTitle:'签字大师｜文件本地处理，手机签署更安心',
+    timelineTitle:'文件本地处理，手机签署更安心'
   }
 }
 
@@ -37,17 +37,17 @@ export function useMiniProgramShare(page = 'home') {
     // #endif
   })
 
-  onShareAppMessage(() => ({
+  const friendShare = () => ({
     title:config.friendTitle,
     path:`${SHARE_PATH}&campaign=${page}`,
     imageUrl:SHARE_IMAGE
-  }))
+  })
 
-  onShareTimeline(() => ({
+  const timelineShare = () => ({
     title:config.timelineTitle,
     query:`from=timeline&campaign=${page}`,
     imageUrl:SHARE_IMAGE
-  }))
+  })
 
-  return { ...config, imageUrl:SHARE_IMAGE }
+  return { ...config, imageUrl:SHARE_IMAGE, friendShare, timelineShare }
 }

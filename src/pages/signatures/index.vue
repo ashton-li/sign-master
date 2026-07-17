@@ -29,7 +29,7 @@
 
 <script setup>
 import { ref } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
+import { onShareAppMessage, onShareTimeline, onShow } from '@dcloudio/uni-app'
 import PageShell from '../../components/PageShell.vue'
 import SignatureInk from '../../components/SignatureInk.vue'
 import SvgIcon from '../../components/SvgIcon.vue'
@@ -38,12 +38,15 @@ import { syncCustomTabBar } from '../../core/navigation/customTabBar'
 import { useSignaturesStore } from '../../stores/signatures'
 
 const signaturesStore = useSignaturesStore()
-useMiniProgramShare('signatures')
+const miniProgramShare = useMiniProgramShare('signatures')
 const suppressedSignatureId = ref('')
 const previewing = ref(null)
 const largeSignatureInk = ref(null)
 const shareBusy = ref(false)
 let longPressTimer = null
+
+onShareAppMessage(miniProgramShare.friendShare)
+onShareTimeline(miniProgramShare.timelineShare)
 
 onShow(() => syncCustomTabBar(2))
 
