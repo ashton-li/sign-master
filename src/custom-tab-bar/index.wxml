@@ -1,0 +1,22 @@
+<view class="tabbar {{dark ? 'dark' : ''}}">
+  <button class="tab {{selected === 0 ? 'active' : ''}}" data-index="0" bindtap="switchTab">
+    <view class="nav-icon icon-file"><view class="file-line"></view></view>
+    <text>文件</text>
+  </button>
+  <button class="tab {{selected === 1 ? 'active' : ''}}" data-index="1" bindtap="switchTab">
+    <view class="nav-icon icon-template"><view></view><view></view><view></view><view></view></view>
+    <text>模板</text>
+  </button>
+  <button class="sign-action" bindtap="startSigning">
+    <view class="sign-disc"><view class="sign-stroke"></view></view>
+    <text>签署</text>
+  </button>
+  <button class="tab {{selected === 2 ? 'active' : ''}}" data-index="2" bindtap="switchTab">
+    <view class="nav-icon icon-signature-library"><view class="library-line top"></view><view class="library-line bottom"></view><view class="library-sign"></view></view>
+    <text>签名</text>
+  </button>
+  <button class="tab {{selected === 3 ? 'active' : ''}}" data-index="3" bindtap="switchTab">
+    <view class="nav-icon icon-person"><view class="person-head"></view><view class="person-body"></view></view>
+    <text>我的</text>
+  </button>
+</view>

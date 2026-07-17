@@ -1,0 +1,55 @@
+{
+  "name": "sign-master",
+  "version": "1.0.0",
+  "description": "签字大师 1.0 - uni-app + Vue 3 微信小程序",
+  "type": "module",
+  "scripts": {
+    "postinstall": "node scripts/patch-uni-conditionals.mjs",
+    "dev:h5": "node scripts/patch-uni-conditionals.mjs && uni -p h5",
+    "dev:mp-weixin": "node scripts/patch-uni-conditionals.mjs && node scripts/sync-manifest-appid.mjs development && uni -p mp-weixin",
+    "build:h5": "node scripts/patch-uni-conditionals.mjs && uni build -p h5",
+    "build:mp-weixin": "node scripts/patch-uni-conditionals.mjs && node scripts/sync-manifest-appid.mjs production && uni build -p mp-weixin && node scripts/prepare-mp-weixin-dist.mjs",
+    "build:prod:mp-weixin": "node scripts/patch-uni-conditionals.mjs && node scripts/sync-manifest-appid.mjs production && uni build -p mp-weixin --mode production && node scripts/prepare-mp-weixin-dist.mjs",
+    "test": "vitest run --config vitest.config.js",
+    "test:unit": "vitest run --config vitest.config.js tests/unit",
+    "test:e2e": "playwright test",
+    "test:mp-weixin": "node tests/mp-weixin/smoke.mjs",
+    "typecheck": "vue-tsc --noEmit --skipLibCheck",
+    "check:compliance": "node scripts/check-text-compliance.mjs",
+    "check:secrets": "node scripts/check-sensitive-files.mjs",
+    "audit:ci": "npm audit --omit=dev --audit-level=high --registry=https://registry.npmjs.org",
+    "ci:check": "npm run check:compliance && npm run check:secrets && npm run typecheck && npm run test:unit"
+  },
+  "dependencies": {
+    "crypto-js": "^4.2.0",
+    "fflate": "^0.8.2",
+    "pdf-lib": "^1.17.1",
+    "pinia": "2.1.7",
+    "vue": "3.4.21"
+  },
+  "devDependencies": {
+    "@dcloudio/uni-app": "3.0.0-5010420260703001",
+    "@dcloudio/uni-h5": "3.0.0-5010420260703001",
+    "@dcloudio/uni-mp-weixin": "3.0.0-5010420260703001",
+    "@dcloudio/types": "^3.4.14",
+    "@dcloudio/uni-automator": "3.0.0-5010420260703001",
+    "@dcloudio/uni-cli-shared": "3.0.0-5010420260703001",
+    "@dcloudio/vite-plugin-uni": "3.0.0-5010420260703001",
+    "@playwright/test": "1.61.1",
+    "@vue/test-utils": "^2.4.6",
+    "autoprefixer": "^10.4.20",
+    "miniprogram-automator": "^0.12.1",
+    "pngjs": "^7.0.0",
+    "postcss": "^8.4.49",
+    "sass": "1.83.0",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.3",
+    "vite": "5.2.8",
+    "vitest": "^2.1.8",
+    "vue-tsc": "^2.2.0",
+    "weapp-tailwindcss": "3.5.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

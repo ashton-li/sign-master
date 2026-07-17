@@ -1,0 +1,1008 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+    <title>签字大师 · SignPen — 核心签字页面</title>
+    <style>
+        :root {
+            --bg-deep: #f0f2f8;
+            --bg-surface: #ffffff;
+            --bg-elevated: #f8f9fd;
+            --text-primary: #1a1c26;
+            --text-secondary: #5a5d6e;
+            --text-tertiary: #9093a5;
+            --text-quaternary: #c0c3d4;
+            --accent: #5856e0;
+            --accent-bright: #7c7aff;
+            --accent-glow: rgba(88, 86, 224, 0.45);
+            --accent-soft: rgba(88, 86, 224, 0.08);
+            --danger: #e74c5e;
+            --danger-soft: rgba(231, 76, 94, 0.08);
+            --success: #22c55e;
+            --success-soft: rgba(34, 197, 94, 0.1);
+            --glass-bg: rgba(255, 255, 255, 0.65);
+            --glass-border: rgba(0, 0, 0, 0.06);
+            --glass-highlight: rgba(255, 255, 255, 0.7);
+            --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04);
+            --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.06);
+            --shadow-lg: 0 12px 36px rgba(0, 0, 0, 0.08);
+            --shadow-xl: 0 20px 60px rgba(0, 0, 0, 0.12);
+            --r-xs: 6px;
+            --r-sm: 10px;
+            --r-md: 16px;
+            --r-lg: 22px;
+            --r-xl: 28px;
+            --font: 'Inter', 'SF Pro Display', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+            --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+            --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+            --phone-w: 390px;
+            --phone-h: 760px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        html {
+            -webkit-font-smoothing: antialiased;
+        }
+        body {
+            font-family: var(--font);
+            background: #e8ecf3;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 16px;
+            gap: 24px;
+            flex-wrap: wrap;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+            transition: all 0.4s var(--ease-smooth);
+            position: relative;
+            overflow-x: hidden;
+        }
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background: radial-gradient(ellipse at 30% 20%, rgba(120, 100, 240, 0.06) 0%, transparent 60%),
+                radial-gradient(ellipse at 70% 80%, rgba(80, 180, 220, 0.04) 0%, transparent 60%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        /* 手机模拟器 */
+        .phone-frame {
+            position: relative;
+            z-index: 2;
+            width: var(--phone-w);
+            height: var(--phone-h);
+            max-height: 92vh;
+            background: #1a1c24;
+            border-radius: 40px;
+            padding: 12px;
+            box-shadow: 0 0 0 2px #2a2d38, 0 0 0 5px #15161e, 0 0 0 6px #3a3d48, 0 20px 60px rgba(0, 0, 0, 0.45);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            flex-shrink: 0;
+            transition: all 0.5s var(--ease-smooth);
+        }
+        .phone-frame.landscape {
+            width: 680px;
+            height: 380px;
+            border-radius: 36px;
+            padding: 10px;
+        }
+        .phone-screen {
+            width: 100%;
+            height: 100%;
+            background: #fafbfd;
+            border-radius: 28px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            transition: all 0.5s var(--ease-smooth);
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+        }
+        .phone-frame.landscape .phone-screen {
+            border-radius: 26px;
+        }
+        .dynamic-island {
+            position: absolute;
+            top: 8px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 90px;
+            height: 24px;
+            background: #0d0e14;
+            border-radius: 16px;
+            z-index: 20;
+            transition: all 0.4s var(--ease-spring);
+        }
+        .phone-frame.landscape .dynamic-island {
+            top: 50%;
+            left: 8px;
+            transform: translateY(-50%);
+            width: 24px;
+            height: 70px;
+            border-radius: 14px;
+        }
+        .status-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 20px 4px;
+            font-size: 10px;
+            font-weight: 600;
+            color: #1a1c26;
+            letter-spacing: 0.03em;
+            flex-shrink: 0;
+            background: transparent;
+            z-index: 8;
+        }
+        .page-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 4px 14px 8px;
+            scroll-behavior: smooth;
+            -webkit-overflow-scrolling: touch;
+        }
+        .page-content::-webkit-scrollbar {
+            display: none;
+        }
+
+        /* 步骤指示器 */
+        .step-indicator {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 6px 0 10px;
+        }
+        .step-dot-line {
+            display: flex;
+            align-items: center;
+            gap: 0;
+        }
+        .step-circle-sm {
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            font-weight: 700;
+            transition: all 0.35s var(--ease-spring);
+            flex-shrink: 0;
+        }
+        .step-circle-sm.active {
+            background: #5856e0;
+            color: #fff;
+            box-shadow: 0 4px 14px rgba(88, 86, 224, 0.4);
+        }
+        .step-circle-sm.done {
+            background: #22c55e;
+            color: #fff;
+            box-shadow: 0 4px 12px rgba(34, 197, 94, 0.35);
+        }
+        .step-circle-sm.pending {
+            background: #e8eaf0;
+            color: #9599ac;
+        }
+        .step-connector {
+            width: 28px;
+            height: 2px;
+            border-radius: 1px;
+            transition: all 0.35s var(--ease-smooth);
+        }
+        .step-connector.done {
+            background: #22c55e;
+        }
+        .step-connector.pending {
+            background: #e8eaf0;
+        }
+        .step-label-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 0 4px;
+            font-size: 8px;
+            font-weight: 600;
+            color: #9599ac;
+            letter-spacing: 0.03em;
+            margin-top: -2px;
+            margin-bottom: 6px;
+        }
+
+        /* 文档预览区 */
+        .doc-preview {
+            background: #fff;
+            border-radius: 14px;
+            border: 1.5px solid rgba(0, 0, 0, 0.06);
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+            min-height: 300px;
+            position: relative;
+            overflow: hidden;
+            margin: 4px 0 8px;
+        }
+        .doc-bg-inner {
+            width: 88%;
+            height: 260px;
+            margin: 16px auto;
+            background: #fafbfd;
+            border-radius: 6px;
+            position: relative;
+            border: 1px dashed #dde0e8;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #c5c9d4;
+            font-size: 10px;
+            letter-spacing: 0.03em;
+        }
+        .ai-slot-highlight {
+            position: absolute;
+            border: 2px dashed #5856e0;
+            background: rgba(88, 86, 224, 0.05);
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s var(--ease-spring);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            animation: slotPulse 2.2s ease-in-out infinite;
+            z-index: 3;
+        }
+        .ai-slot-highlight:nth-child(2) {
+            animation-delay: 0.4s;
+        }
+        @keyframes slotPulse {
+            0%,
+            100% {
+                border-color: #5856e0;
+                box-shadow: 0 0 0 0 rgba(88, 86, 224, 0);
+            }
+            40% {
+                border-color: #8b88f8;
+                box-shadow: 0 0 0 10px rgba(88, 86, 224, 0.08);
+            }
+            70% {
+                border-color: #5856e0;
+                box-shadow: 0 0 0 0 rgba(88, 86, 224, 0);
+            }
+        }
+        .ai-slot-label {
+            font-size: 8px;
+            font-weight: 700;
+            color: #5856e0;
+            letter-spacing: 0.04em;
+            background: #fff;
+            padding: 3px 8px;
+            border-radius: 8px;
+            pointer-events: none;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+        }
+        .ai-badge {
+            position: absolute;
+            top: 10px;
+            right: 12px;
+            background: #5856e0;
+            color: #fff;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 9px;
+            font-weight: 700;
+            z-index: 4;
+            letter-spacing: 0.02em;
+            box-shadow: 0 4px 12px rgba(88, 86, 224, 0.3);
+        }
+
+        /* 手动签名按钮 */
+        .btn-outline-accent {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            width: 100%;
+            padding: 10px;
+            border-radius: 14px;
+            background: #fff;
+            border: 2px dashed #d0d4e0;
+            color: #5a5d6e;
+            font-weight: 600;
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.2s var(--ease-smooth);
+            letter-spacing: 0.02em;
+            font-family: var(--font);
+        }
+        .btn-outline-accent:active {
+            border-color: #5856e0;
+            background: rgba(88, 86, 224, 0.04);
+            color: #5856e0;
+            transform: scale(0.97);
+        }
+
+        /* ============ 签名画布（横屏模式） ============ */
+        .sign-landscape-wrap {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            gap: 4px;
+            padding: 4px 6px;
+        }
+        .sign-canvas-area {
+            flex: 1;
+            background: #fff;
+            border-radius: 12px;
+            position: relative;
+            border: 2px solid rgba(0, 0, 0, 0.06);
+            box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.03);
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 160px;
+        }
+        .sign-guide-line {
+            position: absolute;
+            left: 12%;
+            right: 12%;
+            bottom: 36%;
+            height: 1px;
+            background: linear-gradient(90deg, transparent 0%, rgba(160, 165, 185, 0.5) 20%, rgba(160, 165, 185, 0.6) 50%, rgba(160, 165, 185, 0.5) 80%, transparent 100%);
+            pointer-events: none;
+            z-index: 1;
+        }
+        .sign-guide-text {
+            position: absolute;
+            bottom: calc(36% + 8px);
+            right: 14%;
+            font-size: 9px;
+            color: #c5c9d4;
+            letter-spacing: 0.04em;
+            pointer-events: none;
+            z-index: 1;
+            font-weight: 500;
+        }
+        .sign-preview-sig {
+            font-family: 'Caveat', 'KaiTi', 'STKaiti', 'PingFang SC', cursive, serif;
+            font-size: 28px;
+            color: #1a1c26;
+            letter-spacing: 3px;
+            position: relative;
+            z-index: 2;
+            opacity: 0.7;
+            transform: rotate(-2deg);
+        }
+        .sign-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            flex-wrap: wrap;
+            padding: 2px 0;
+        }
+        .sign-color-dots {
+            display: flex;
+            gap: 4px;
+            align-items: center;
+        }
+        .sign-color-dot {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: all 0.25s var(--ease-spring);
+            flex-shrink: 0;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+        }
+        .sign-color-dot.active {
+            border-color: #fff;
+            box-shadow: 0 0 0 3px #5856e0, 0 2px 6px rgba(0, 0, 0, 0.12);
+            transform: scale(1.15);
+        }
+        .sign-size-slider {
+            -webkit-appearance: none;
+            width: 48px;
+            height: 4px;
+            border-radius: 2px;
+            background: linear-gradient(90deg, #d0d5e0 0%, #5856e0 100%);
+            outline: none;
+            cursor: pointer;
+        }
+        .sign-size-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #fff;
+            border: 2px solid #5856e0;
+            cursor: pointer;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+        }
+        .sign-btn-sm {
+            padding: 4px 8px;
+            border-radius: 10px;
+            font-size: 9px;
+            font-weight: 600;
+            cursor: pointer;
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            background: #fff;
+            color: #5a5d6e;
+            transition: all 0.15s var(--ease-smooth);
+            font-family: var(--font);
+            white-space: nowrap;
+            letter-spacing: 0.02em;
+            display: flex;
+            align-items: center;
+            gap: 2px;
+        }
+        .sign-btn-sm.eraser-on {
+            background: #fde8ec;
+            border-color: #e74c5e;
+            color: #e74c5e;
+        }
+        .sign-actions-row {
+            display: flex;
+            gap: 6px;
+            justify-content: flex-end;
+            padding: 2px 0;
+        }
+        .btn-cancel-outline {
+            padding: 7px 14px;
+            border-radius: 16px;
+            font-size: 10px;
+            font-weight: 600;
+            background: #fff;
+            color: #5a5d6e;
+            border: 1.5px solid rgba(0, 0, 0, 0.1);
+            cursor: pointer;
+            letter-spacing: 0.02em;
+            font-family: var(--font);
+            transition: all 0.2s var(--ease-smooth);
+        }
+        .btn-confirm-solid {
+            padding: 7px 16px;
+            border-radius: 16px;
+            font-size: 10px;
+            font-weight: 700;
+            background: #5856e0;
+            color: #fff;
+            border: none;
+            cursor: pointer;
+            letter-spacing: 0.02em;
+            box-shadow: 0 4px 14px rgba(88, 86, 224, 0.35);
+            font-family: var(--font);
+            transition: all 0.2s var(--ease-smooth);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .btn-confirm-solid:active {
+            transform: scale(0.92);
+            box-shadow: 0 2px 6px rgba(88, 86, 224, 0.2);
+        }
+
+        /* ============ 拖拽调整区 ============ */
+        .draggable-sig-badge {
+            position: absolute;
+            padding: 5px 14px;
+            border: 2.5px solid #5856e0;
+            border-radius: 4px;
+            font-family: 'Caveat', 'KaiTi', 'STKaiti', 'PingFang SC', cursive, serif;
+            font-size: 16px;
+            color: #1a1c26;
+            background: rgba(255, 255, 255, 0.85);
+            letter-spacing: 2px;
+            font-weight: 700;
+            cursor: grab;
+            box-shadow: 0 0 0 5px rgba(88, 86, 224, 0.08), 0 4px 16px rgba(0, 0, 0, 0.08);
+            z-index: 3;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .drag-handle-icon {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            opacity: 0.5;
+            cursor: grab;
+        }
+        .drag-handle-icon span {
+            width: 10px;
+            height: 2px;
+            background: #5856e0;
+            border-radius: 1px;
+        }
+        .edit-chips {
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+            padding: 4px 0;
+        }
+        .edit-chip {
+            padding: 5px 9px;
+            border-radius: 12px;
+            font-size: 9px;
+            font-weight: 600;
+            cursor: pointer;
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            background: #fff;
+            color: #5a5d6e;
+            transition: all 0.15s var(--ease-smooth);
+            font-family: var(--font);
+            letter-spacing: 0.02em;
+        }
+        .edit-chip:active {
+            background: rgba(88, 86, 224, 0.06);
+            border-color: #5856e0;
+            color: #5856e0;
+        }
+        .edit-chip.primary {
+            background: #5856e0;
+            color: #fff;
+            border-color: transparent;
+            font-weight: 700;
+        }
+
+        /* 操作卡片 */
+        .action-cards {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .action-card {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 13px 14px;
+            background: #fff;
+            border-radius: 16px;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: all 0.25s var(--ease-spring);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+        }
+        .action-card:active {
+            border-color: #5856e0;
+            transform: scale(0.97);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.06);
+        }
+        .action-icon {
+            width: 34px;
+            height: 34px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            flex-shrink: 0;
+        }
+
+        /* Toast */
+        .toast-pop {
+            position: absolute;
+            top: 12px;
+            left: 50%;
+            transform: translateX(-50%) translateY(-130px);
+            background: #1a1c26;
+            color: #fff;
+            padding: 8px 16px;
+            border-radius: 18px;
+            font-size: 10px;
+            font-weight: 600;
+            z-index: 30;
+            letter-spacing: 0.03em;
+            pointer-events: none;
+            transition: transform 0.4s var(--ease-spring);
+            white-space: nowrap;
+            box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .toast-pop.show {
+            transform: translateX(-50%) translateY(0);
+        }
+
+        /* 旋转提示 */
+        .rotate-hint-badge {
+            position: absolute;
+            top: -32px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #5856e0;
+            color: #fff;
+            padding: 5px 12px;
+            border-radius: 12px;
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 0.03em;
+            white-space: nowrap;
+            animation: hintFloat 2s ease-in-out infinite;
+            z-index: 25;
+            pointer-events: none;
+            box-shadow: 0 4px 14px rgba(88, 86, 224, 0.4);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        @keyframes hintFloat {
+            0%,
+            100% {
+                transform: translateX(-50%) translateY(0);
+            }
+            50% {
+                transform: translateX(-50%) translateY(-5px);
+            }
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        @media (max-width: 720px) {
+            body {
+                flex-direction: column;
+                padding: 8px;
+                gap: 12px;
+            }
+            .phone-frame {
+                width: min(96vw, 390px);
+                height: auto;
+                aspect-ratio: 390/760;
+                max-height: 94vh;
+                border-radius: 32px;
+                padding: 8px;
+            }
+            .phone-frame.landscape {
+                width: min(96vw, 620px);
+                height: auto;
+                aspect-ratio: 680/380;
+                border-radius: 28px;
+                padding: 6px;
+            }
+            .phone-screen {
+                border-radius: 22px;
+            }
+            .phone-frame.landscape .phone-screen {
+                border-radius: 20px;
+            }
+            .dynamic-island {
+                width: 64px;
+                height: 18px;
+                border-radius: 10px;
+                top: 5px;
+            }
+            .phone-frame.landscape .dynamic-island {
+                width: 18px;
+                height: 50px;
+                border-radius: 10px;
+                left: 5px;
+            }
+            .rotate-hint-badge {
+                top: -26px;
+                font-size: 8px;
+                padding: 4px 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 手机模拟器 — 竖屏初始 -->
+    <div class="phone-frame" id="phoneFrame">
+        <div class="phone-screen">
+            <div class="dynamic-island" id="dynamicIsland"></div>
+            <div class="status-bar">
+                <span style="font-weight:700;">9:41</span>
+                <span style="display:flex;gap:3px;opacity:0.7;">
+                    <svg width="11" height="11" fill="currentColor" viewBox="0 0 24 24"><path d="M1 9l2 2c4.97-4.97 13.03-4.97 18 0l2-2C17.93 3.93 6.07 3.93 1 9z"/></svg>
+                    <svg width="14" height="8" fill="currentColor" viewBox="0 0 24 24"><rect x="1" y="4" width="20" height="14" rx="2" stroke="currentColor" fill="none" stroke-width="2"/><rect x="2" y="6" width="16" height="10" rx="1" fill="currentColor"/></svg>
+                </span>
+            </div>
+
+            <!-- 旋转提示（横屏时显示） -->
+            <div class="rotate-hint-badge hidden" id="rotateHint">🔄 横屏书写模式 · 最佳体验</div>
+
+            <div class="page-content" id="pageContent">
+                <!-- ===== 步骤1+2：文档预览 + AI识别 ===== -->
+                <div id="stepPreview">
+                    <div style="display:flex;align-items:center;justify-content:space-between;padding:2px 0;">
+                        <h3 style="font-size:13px;font-weight:700;color:#1a1c26;">采购协议2025.pdf</h3>
+                        <span style="font-size:8px;color:#5856e0;font-weight:600;">第1页/共3页</span>
+                    </div>
+                    <!-- 步骤指示器 -->
+                    <div class="step-indicator">
+                        <span class="step-circle-sm active">1</span>
+                        <span class="step-connector done"></span>
+                        <span class="step-circle-sm active">2</span>
+                        <span class="step-connector pending"></span>
+                        <span class="step-circle-sm pending">3</span>
+                        <span class="step-connector pending"></span>
+                        <span class="step-circle-sm pending">✓</span>
+                    </div>
+                    <div class="step-label-row">
+                        <span>选择文件</span><span>识别位置</span><span>手写签名</span><span>完成</span>
+                    </div>
+                    <div class="doc-preview">
+                        <div class="doc-bg-inner">
+                            文件预览区域
+                            <div class="ai-badge">🤖 AI识别到2个签名位</div>
+                            <!-- 签名位1 -->
+                            <div class="ai-slot-highlight" style="top:56%;left:48%;width:38%;height:16%;" onclick="startSigning('slot1')">
+                                <span class="ai-slot-label">✍️ 甲方签字</span>
+                            </div>
+                            <!-- 签名位2 -->
+                            <div class="ai-slot-highlight" style="top:74%;left:46%;width:38%;height:14%;" onclick="startSigning('slot2')">
+                                <span class="ai-slot-label">✍️ 乙方盖章</span>
+                            </div>
+                        </div>
+                    </div>
+                    <p style="font-size:9px;color:#9599ac;text-align:center;padding:2px;">💡 点击虚线框进行签名，AI已自动识别标注位置</p>
+                    <button class="btn-outline-accent" onclick="startSigning('manual')">
+                        ＋ 手动添加标注位置（默认居中）
+                    </button>
+                </div>
+
+                <!-- ===== 步骤3：横屏签名画布 ===== -->
+                <div id="stepSignCanvas" class="hidden">
+                    <div class="step-indicator">
+                        <span class="step-circle-sm done">✓</span>
+                        <span class="step-connector done"></span>
+                        <span class="step-circle-sm done">✓</span>
+                        <span class="step-connector done"></span>
+                        <span class="step-circle-sm active">3</span>
+                        <span class="step-connector pending"></span>
+                        <span class="step-circle-sm pending">✓</span>
+                    </div>
+                    <div class="step-label-row">
+                        <span>选择文件</span><span>识别位置</span><span>手写签名</span><span>完成</span>
+                    </div>
+                    <div class="sign-landscape-wrap">
+                        <div style="display:flex;align-items:center;justify-content:space-between;padding:2px 0;">
+                            <span style="font-size:10px;font-weight:700;color:#1a1c26;" id="signSlotLabel">✍️ 甲方签字</span>
+                            <span style="font-size:8px;color:#9599ac;">横屏书写模式</span>
+                        </div>
+                        <div class="sign-canvas-area">
+                            <div class="sign-guide-line"></div>
+                            <span class="sign-guide-text">请在此处签名</span>
+                            <span class="sign-preview-sig">签名画布</span>
+                        </div>
+                        <div class="sign-toolbar">
+                            <span style="font-size:7px;font-weight:600;color:#9599ac;">颜色</span>
+                            <div class="sign-color-dots">
+                                <span class="sign-color-dot active" style="background:#1a1c26;"></span>
+                                <span class="sign-color-dot" style="background:#1e3a5f;"></span>
+                                <span class="sign-color-dot" style="background:#2563eb;"></span>
+                                <span class="sign-color-dot" style="background:#c1121f;"></span>
+                                <span class="sign-color-dot" style="background:#2d6a4f;"></span>
+                            </div>
+                            <span style="font-size:7px;font-weight:600;color:#9599ac;margin-left:2px;">粗细</span>
+                            <input type="range" class="sign-size-slider" min="1" max="12" value="3">
+                            <button class="sign-btn-sm" id="eraserToggle" onclick="toggleEraser()">🧹 橡皮</button>
+                            <button class="sign-btn-sm">↩️</button>
+                            <button class="sign-btn-sm">↪️</button>
+                        </div>
+                        <div class="sign-actions-row">
+                            <button class="btn-cancel-outline" onclick="cancelSign()">✗ 取消</button>
+                            <button class="btn-confirm-solid" onclick="confirmSign()">✓ 确认签名</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ===== 步骤4：调整位置 ===== -->
+                <div id="stepAdjust" class="hidden">
+                    <div class="step-indicator">
+                        <span class="step-circle-sm done">✓</span>
+                        <span class="step-connector done"></span>
+                        <span class="step-circle-sm done">✓</span>
+                        <span class="step-connector done"></span>
+                        <span class="step-circle-sm done">✓</span>
+                        <span class="step-connector done"></span>
+                        <span class="step-circle-sm active">✓</span>
+                    </div>
+                    <div class="step-label-row">
+                        <span>选择文件</span><span>识别位置</span><span>手写签名</span><span>调整完成</span>
+                    </div>
+                    <div style="display:flex;align-items:center;justify-content:space-between;padding:2px 0;">
+                        <h3 style="font-size:13px;font-weight:700;color:#1a1c26;">调整标注位置</h3>
+                        <span style="font-size:8px;color:#5856e0;font-weight:600;">可拖拽</span>
+                    </div>
+                    <div class="doc-preview" style="min-height:200px;">
+                        <div class="doc-bg-inner" style="height:170px;">
+                            文件预览
+                            <div class="draggable-sig-badge" style="bottom:35px;right:28px;">
+                                <span class="drag-handle-icon"><span></span><span></span><span></span></span>
+                                李大明
+                            </div>
+                            <div class="draggable-sig-badge" style="bottom:8px;right:22px;font-size:13px;">
+                                <span class="drag-handle-icon"><span></span><span></span><span></span></span>
+                                公司章
+                            </div>
+                        </div>
+                    </div>
+                    <p style="font-size:9px;color:#9599ac;text-align:center;padding:2px;">💡 拖拽签名到指定位置 · 双指缩放旋转 · 蓝色边框=已选中</p>
+                    <div class="edit-chips">
+                        <span class="edit-chip">↩️ 撤销</span>
+                        <span class="edit-chip">↪️ 重做</span>
+                        <span class="edit-chip">🔒 锁定</span>
+                        <span class="edit-chip">🔄 旋转15°</span>
+                        <span class="edit-chip" style="color:#e74c5e;">🗑️ 删除</span>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:6px;padding:6px 10px;background:#fff;border-radius:12px;margin-top:4px;box-shadow:0 1px 3px rgba(0,0,0,0.03);">
+                        <span style="font-size:8px;font-weight:600;color:#9599ac;">透明度</span>
+                        <div style="flex:1;height:3px;background:linear-gradient(90deg,#5856e0 0%,#5856e0 85%,#e0e3ed 85%);border-radius:2px;position:relative;">
+                            <span style="position:absolute;right:15%;top:-6px;width:14px;height:14px;border-radius:50%;background:#fff;border:2px solid #5856e0;"></span>
+                        </div>
+                        <span style="font-size:9px;font-weight:700;color:#1a1c26;">85%</span>
+                    </div>
+                    <button class="edit-chip primary" style="width:100%;margin-top:6px;padding:9px;border-radius:14px;font-size:11px;" onclick="finishSign()">
+                        完成调整，下一步 →
+                    </button>
+                </div>
+
+                <!-- ===== 步骤5：保存/导出引导 ===== -->
+                <div id="stepFinish" class="hidden">
+                    <div style="padding:4px 0;text-align:center;">
+                        <div style="font-size:40px;margin-bottom:4px;">✅</div>
+                        <h3 style="font-size:14px;font-weight:700;color:#1a1c26;">标注完成！</h3>
+                        <p style="font-size:9px;color:#9599ac;">选择以下操作，或直接导出文件</p>
+                    </div>
+                    <div class="action-cards" style="margin-top:8px;">
+                        <div class="action-card" onclick="showToast('模板已保存 ✓')">
+                            <div class="action-icon" style="background:#eef0ff;color:#5856e0;">📋</div>
+                            <div style="flex:1;"><strong style="font-size:11px;color:#1a1c26;">保存为模板</strong><p style="font-size:8px;color:#9599ac;">记录标注位置，下次自动应用</p></div>
+                            <span style="color:#c0c3d4;">›</span>
+                        </div>
+                        <div class="action-card" onclick="showToast('签名已保存到素材库 ✓')">
+                            <div class="action-icon" style="background:#e8faf0;color:#22c55e;">✍️</div>
+                            <div style="flex:1;"><strong style="font-size:11px;color:#1a1c26;">保存签名素材</strong><p style="font-size:8px;color:#9599ac;">下次直接使用此签名</p></div>
+                            <span style="color:#c0c3d4;">›</span>
+                        </div>
+                    </div>
+                    <p style="text-align:center;padding:8px;font-size:9px;font-weight:600;color:#9599ac;cursor:pointer;" id="skipSaveBtn" onclick="showExport()">
+                        跳过，直接导出 →
+                    </p>
+                    <div id="exportSection" class="hidden" style="margin-top:4px;">
+                        <h4 style="font-size:10px;font-weight:700;color:#1a1c26;margin-bottom:4px;">导出格式</h4>
+                        <div style="display:flex;gap:5px;flex-wrap:wrap;">
+                            <span style="flex:1;padding:8px;border-radius:10px;background:#fff;text-align:center;font-size:9px;font-weight:600;cursor:pointer;border:2px solid #5856e0;background:#eef0ff;color:#5856e0;">📄 PDF</span>
+                            <span style="flex:1;padding:8px;border-radius:10px;background:#fff;text-align:center;font-size:9px;font-weight:600;cursor:pointer;border:1px solid rgba(0,0,0,0.06);color:#5a5d6e;">🖼️ PNG</span>
+                            <span style="flex:1;padding:8px;border-radius:10px;background:#fff;text-align:center;font-size:9px;font-weight:600;cursor:pointer;border:1px solid rgba(0,0,0,0.06);color:#5a5d6e;">📸 JPEG</span>
+                        </div>
+                        <div style="display:flex;gap:5px;margin-top:6px;">
+                            <span style="flex:1;padding:8px;border-radius:10px;background:#fff;text-align:center;font-size:8px;font-weight:600;cursor:pointer;border:1px solid rgba(0,0,0,0.06);color:#5a5d6e;">💾 保存</span>
+                            <span style="flex:1;padding:8px;border-radius:10px;background:#fff;text-align:center;font-size:8px;font-weight:600;cursor:pointer;border:1px solid rgba(0,0,0,0.06);color:#5a5d6e;">💬 分享</span>
+                        </div>
+                        <button class="btn-confirm-solid" style="width:100%;margin-top:8px;justify-content:center;padding:10px;" onclick="showToast('导出成功 ✓')">
+                            📤 确认导出
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Toast -->
+            <div class="toast-pop" id="toastPop"><span>✓</span><span id="toastMsg">操作成功</span></div>
+        </div>
+    </div>
+
+    <script>
+        const phoneFrame = document.getElementById('phoneFrame');
+        const rotateHint = document.getElementById('rotateHint');
+        const dynamicIsland = document.getElementById('dynamicIsland');
+        const toastEl = document.getElementById('toastPop');
+        const toastMsgEl = document.getElementById('toastMsg');
+        const eraserToggle = document.getElementById('eraserToggle');
+        const skipSaveBtn = document.getElementById('skipSaveBtn');
+        const exportSection = document.getElementById('exportSection');
+        let toastTimer = null;
+
+        function showToast(msg) {
+            clearTimeout(toastTimer);
+            toastMsgEl.textContent = msg;
+            toastEl.classList.add('show');
+            toastTimer = setTimeout(() => toastEl.classList.remove('show'), 1800);
+        }
+
+        function switchStep(step) {
+            document.getElementById('stepPreview').classList.add('hidden');
+            document.getElementById('stepSignCanvas').classList.add('hidden');
+            document.getElementById('stepAdjust').classList.add('hidden');
+            document.getElementById('stepFinish').classList.add('hidden');
+            if (step === 'preview') {
+                document.getElementById('stepPreview').classList.remove('hidden');
+                phoneFrame.classList.remove('landscape');
+                rotateHint.classList.add('hidden');
+            } else if (step === 'sign') {
+                document.getElementById('stepSignCanvas').classList.remove('hidden');
+                phoneFrame.classList.add('landscape');
+                rotateHint.classList.remove('hidden');
+                dynamicIsland.classList.add('active');
+            } else if (step === 'adjust') {
+                document.getElementById('stepAdjust').classList.remove('hidden');
+                phoneFrame.classList.remove('landscape');
+                rotateHint.classList.add('hidden');
+                dynamicIsland.classList.remove('active');
+            } else if (step === 'finish') {
+                document.getElementById('stepFinish').classList.remove('hidden');
+                exportSection.classList.add('hidden');
+                skipSaveBtn.style.display = 'block';
+                phoneFrame.classList.remove('landscape');
+                rotateHint.classList.add('hidden');
+                dynamicIsland.classList.remove('active');
+            }
+        }
+
+        function startSigning(slot) {
+            const label = slot === 'slot2' ? '✍️ 乙方盖章' : '✍️ 甲方签字';
+            document.getElementById('signSlotLabel').textContent = label;
+            switchStep('sign');
+            showToast('进入签名模式 · 请横屏书写');
+        }
+
+        function cancelSign() {
+            switchStep('preview');
+            showToast('已取消签名');
+        }
+
+        function confirmSign() {
+            switchStep('adjust');
+            showToast('签名已放置，可拖拽调整');
+        }
+
+        function finishSign() {
+            switchStep('finish');
+            showToast('标注完成，请选择后续操作');
+        }
+
+        function toggleEraser() {
+            eraserToggle.classList.toggle('eraser-on');
+            if (eraserToggle.classList.contains('eraser-on')) {
+                eraserToggle.textContent = '🧹 橡皮(开)';
+            } else {
+                eraserToggle.textContent = '🧹 橡皮';
+            }
+        }
+
+        function showExport() {
+            exportSection.classList.remove('hidden');
+            skipSaveBtn.style.display = 'none';
+            document.getElementById('pageContent').scrollTop = document.getElementById('pageContent').scrollHeight;
+        }
+
+        // 初始化显示预览
+        switchStep('preview');
+
+        // 点击AI识别槽位也可触发
+        document.querySelectorAll('.ai-slot-highlight').forEach(slot => {
+            slot.addEventListener('click', function() {
+                const label = this.querySelector('.ai-slot-label').textContent;
+                document.getElementById('signSlotLabel').textContent = '✍️ ' + label;
+                switchStep('sign');
+                showToast('进入签名模式 · 请横屏书写');
+            });
+        });
+
+        // 手动添加按钮
+        document.querySelector('.btn-outline-accent').addEventListener('click', function() {
+            document.getElementById('signSlotLabel').textContent = '✍️ 手动标注';
+            switchStep('sign');
+            showToast('进入签名模式 · 请横屏书写');
+        });
+
+        console.log('✅ 签字大师 · 核心签字页面已就绪');
+        console.log('   📄 步骤1-2：文档预览 + AI识别签名位');
+        console.log('   ✍️ 步骤3：横屏手写签名画布（自动横屏）');
+        console.log('   🔧 步骤4：拖拽调整签名位置');
+        console.log('   💾 步骤5：保存模板/签名/导出');
+    </script>
+</body>
+</html>

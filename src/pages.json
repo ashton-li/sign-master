@@ -1,0 +1,96 @@
+{
+  "pages": [
+    {
+      "path": "pages/home/index",
+      "style": {
+        "navigationBarTitleText": "签字大师",
+        "navigationStyle": "custom",
+        "enablePullDownRefresh": true,
+        "backgroundTextStyle": "dark"
+      }
+    },
+    {
+      "path": "pages/templates/index",
+      "style": {
+        "navigationBarTitleText": "我的模板",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/signatures/index",
+      "style": {
+        "navigationBarTitleText": "我的签名",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/settings/index",
+      "style": {
+        "navigationBarTitleText": "我的",
+        "navigationStyle": "custom"
+      }
+    }
+  ],
+  "subPackages": [
+    {
+      "root": "pages/sign",
+      "pages": [
+        { "path": "index", "style": { "navigationBarTitleText": "选择与定位", "disableScroll": true } },
+        { "path": "scan", "style": { "navigationBarTitleText": "扫描文稿", "disableScroll": true } },
+        { "path": "draw", "style": { "navigationBarTitleText": "手写签名", "pageOrientation": "landscape", "disableScroll": true } },
+        { "path": "edit", "style": { "navigationBarTitleText": "调整签名", "disableScroll": true } },
+        { "path": "preview", "style": { "navigationBarTitleText": "导出文件", "disableScroll": true } },
+        { "path": "save-signatures", "style": { "navigationBarTitleText": "保存签名" } },
+        { "path": "save-template", "style": { "navigationBarTitleText": "保存模板" } }
+      ]
+    },
+    {
+      "root": "subpackages/templates",
+      "pages": [
+        { "path": "apply", "style": { "navigationBarTitleText": "应用模板" } }
+      ]
+    },
+    {
+      "root": "subpackages/settings",
+      "pages": [
+        { "path": "help", "style": { "navigationBarTitleText": "帮助与反馈" } },
+        { "path": "privacy", "style": { "navigationBarTitleText": "隐私说明" } },
+        { "path": "backup", "style": { "navigationBarTitleText": "备份与恢复" } },
+        { "path": "capacity", "style": { "navigationBarTitleText": "容量管理" } },
+        { "path": "about", "style": { "navigationBarTitleText": "关于" } }
+      ]
+    },
+    {
+      "root": "subpackages/security",
+      "pages": [
+        { "path": "verify", "style": { "navigationBarTitleText": "签字鉴别" } }
+      ]
+    }
+  ],
+  "tabBar": {
+    "custom": true,
+    "color": "#9093a5",
+    "selectedColor": "#5856e0",
+    "backgroundColor": "#ffffff",
+    "list": [
+      { "pagePath": "pages/home/index", "text": "文件" },
+      { "pagePath": "pages/templates/index", "text": "模板" },
+      { "pagePath": "pages/signatures/index", "text": "签名" },
+      { "pagePath": "pages/settings/index", "text": "我的" }
+    ]
+  },
+  "globalStyle": {
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "签字大师",
+    "navigationBarBackgroundColor": "#f7f8fc",
+    "backgroundColor": "#f0f2f8"
+  },
+  "easycom": {
+    "autoscan": true,
+    "custom": {
+      "^GlassCard$": "@/components/GlassCard.vue",
+      "^PulseButton$": "@/components/PulseButton.vue",
+      "^BottomNav$": "@/components/BottomNav.vue"
+    }
+  }
+}

@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+    <title>签字大师 · SignPen — 合同编辑页</title>
+    <style>
+        :root {
+            --bg: #e8ecf2;
+            --surface: #ffffff;
+            --text: #1a1c26;
+            --text-secondary: #5a5d6e;
+            --text-tertiary: #9093a5;
+            --accent: #5856e0;
+            --accent-glow: rgba(88, 86, 224, 0.45);
+            --accent-light: rgba(88, 86, 224, 0.08);
+            --danger: #e74c5e;
+            --success: #22c55e;
+            --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.03);
+            --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.06);
+            --shadow-md: 0 6px 20px rgba(0, 0, 0, 0.1);
+            --shadow-lg: 0 12px 36px rgba(0, 0, 0, 0.14);
+            --r-xs: 4px;
+            --r-sm: 8px;
+            --r-md: 14px;
+            --r-lg: 20px;
+            --r-full: 9999px;
+            --font: 'Inter', 'SF Pro Display', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+            --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+            --ease-smooth: cubic-bezier(0.25, 0.1, 0.25, 1);
+            --phone-w: 390px;
+            --phone-h: 760px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        html {
+            -webkit-font-smoothing: antialiased;
+        }
+        body {
+            font-family: var(--font);
+            background: #e0e4ed;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 14px;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation;
+            overflow-x: hidden;
+            position: relative;
+        }
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background: radial-gradient(ellipse at 25% 30%, rgba(120, 100, 240, 0.04) 0%, transparent 55%),
+                radial-gradient(ellipse at 72% 68%, rgba(80, 180, 220, 0.03) 0%, transparent 55%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        /* 手机模拟器 */
+        .phone-frame {
+            position: relative;
+            z-index: 2;
+            width: var(--phone-w);
+            height: var(--phone-h);
+            max-height: 94vh;
+            background: #1a1c24;
+            border-radius: 38px;
+            padding: 10px;
+            box-shadow: 0 0 0 2px #2a2d38, 0 0 0 5px #15161e, 0 0 0 6px #3a3d48, 0 18px 55px rgba(0, 0, 0, 0.4);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            flex-shrink: 0;
+            transition: all 0.4s var(--ease-smooth);
+        }
+        .phone-screen {
+            width: 100%;
+            height: 100%;
+            background: #f5f6fa;
+            border-radius: 28px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+        }
+        .dynamic-island {
+            position: absolute;
+            top: 7px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 82px;
+            height: 22px;
+            background: #0d0e14;
+            border-radius: 14px;
+            z-index: 20;
+        }
+        .status-bar-mini {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 18px 2px;
+            font-size: 9px;
+            font-weight: 600;
+            color: #1a1c26;
+            letter-spacing: 0.03em;
+            flex-shrink: 0;
+            background: transparent;
+            z-index: 8;
+        }
+
+        /* 顶部操作栏 */
+        .top-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 4px 14px 6px;
+            flex-shrink: 0;
+            z-index: 10;
+            background: transparent;
+        }
+        .top-bar .btn-back {
+            display: flex;
+            align-items: center;
+            gap: 3px;
+            padding: 6px 10px;
+            border-radius: var(--r-full);
+            font-size: 10px;
+            font-weight: 600;
+            background: #fff;
+            color: var(--text-secondary);
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            cursor: pointer;
+            font-family: var(--font);
+            letter-spacing: 0.02em;
+            box-shadow: var(--shadow-xs);
+            transition: all 0.2s;
+        }
+        .top-bar .btn-back:active {
+            background: #f0f0f5;
+            transform: scale(0.94);
+        }
+        .top-bar .file-name-label {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text);
+            letter-spacing: -0.01em;
+        }
+        .top-bar .btn-save {
+            padding: 6px 14px;
+            border-radius: var(--r-full);
+            font-size: 10px;
+            font-weight: 700;
+            background: var(--accent);
+            color: #fff;
+            border: none;
+            cursor: pointer;
+            letter-spacing: 0.02em;
+            box-shadow: 0 3px 12px var(--accent-glow);
+            font-family: var(--font);
+            transition: all 0.2s;
+        }
+        .top-bar .btn-save:active {
+            transform: scale(0.92);
+        }
+
+        /* 合同编辑区 — 占据绝大部分空间 */
+        .contract-editor {
+            flex: 1;
+            margin: 4px 10px 6px;
+            position: relative;
+            background: #fff;
+            border-radius: var(--r-sm);
+            box-shadow: var(--shadow-md);
+            overflow: hidden;
+            touch-action: none;
+            cursor: default;
+        }
+        /* 合同纸张 */
+        .contract-paper {
+            width: 100%;
+            height: 100%;
+            background: #fefefe;
+            position: relative;
+            padding: 18px 16px;
+            background-image: linear-gradient(#e8e8ef 1px, transparent 1px);
+            background-size: 100% 24px;
+            background-position: 0 40px;
+            font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            overflow: hidden;
+        }
+        .contract-paper .doc-title {
+            font-size: 12px;
+            font-weight: 800;
+            color: #1a1c26;
+            text-align: center;
+            letter-spacing: 0.04em;
+            margin-bottom: 10px;
+        }
+        .contract-paper .doc-body {
+            font-size: 8px;
+            color: #5a5d6e;
+            line-height: 24px;
+            letter-spacing: 0.02em;
+        }
+        .contract-paper .doc-body .line {
+            display: block;
+            height: 24px;
+        }
+        .contract-paper .doc-body .line.short {
+            width: 70%;
+        }
+        .contract-paper .doc-body .line.medium {
+            width: 85%;
+        }
+        /* AI识别的签名位虚线框（背景参考） */
+        .sig-slot-ghost {
+            position: absolute;
+            border: 1.5px dashed #d5d8e5;
+            border-radius: 3px;
+            pointer-events: none;
+            z-index: 0;
+            opacity: 0.5;
+        }
+
+        /* 签名图层 — 可拖拽编辑 */
+        .sig-layer {
+            position: absolute;
+            cursor: grab;
+            z-index: 5;
+            transition: box-shadow 0.2s var(--ease-smooth), border-color 0.2s var(--ease-smooth);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 40px;
+            min-height: 16px;
+            border: 2px solid transparent;
+            border-radius: 3px;
+            background: transparent;
+            touch-action: none;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        .sig-layer:active {
+            cursor: grabbing;
+        }
+        .sig-layer.selected {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 5px rgba(88, 86, 224, 0.1), 0 0 16px rgba(88, 86, 224, 0.18);
+            z-index: 10;
+            border-radius: 4px;
+        }
+        .sig-layer.dragging {
+            box-shadow: 0 8px 28px rgba(0, 0, 0, 0.2);
+            z-index: 12;
+            opacity: 0.9;
+            transition: none;
+        }
+        /* 签名文字 */
+        .sig-text {
+            font-family: 'Caveat', 'KaiTi', 'STKaiti', 'PingFang SC', cursive, serif;
+            color: #1a1c26;
+            letter-spacing: 1.5px;
+            pointer-events: none;
+            white-space: nowrap;
+        }
+        /* 编辑控制手柄 */
+        .sig-handles {
+            position: absolute;
+            inset: -6px;
+            pointer-events: none;
+            z-index: 11;
+            display: none;
+        }
+        .sig-layer.selected .sig-handles {
+            display: block;
+        }
+        .sig-handle {
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            background: #fff;
+            border: 2px solid var(--accent);
+            border-radius: 50%;
+            pointer-events: auto;
+            cursor: pointer;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+            transition: transform 0.15s var(--ease-spring);
+        }
+        .sig-handle:active {
+            transform: scale(1.4);
+        }
+        .sig-handle.tl {
+            top: -6px;
+            left: -6px;
+            cursor: nwse-resize;
+        }
+        .sig-handle.tr {
+            top: -6px;
+            right: -6px;
+            cursor: nesw-resize;
+        }
+        .sig-handle.bl {
+            bottom: -6px;
+            left: -6px;
+            cursor: nesw-resize;
+        }
+        .sig-handle.br {
+            bottom: -6px;
+            right: -6px;
+            cursor: nwse-resize;
+        }
+        .sig-handle.rotate {
+            top: -22px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 10px;
+            height: 10px;
+            cursor: grab;
+            border-radius: 50%;
+        }
+        .sig-handle.rotate::after {
+            content: '';
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 1.5px;
+            height: 8px;
+            background: var(--accent);
+            border-radius: 1px;
+        }
+
+        /* 对齐辅助线 */
+        .guide-line-h,
+        .guide-line-v {
+            position: absolute;
+            pointer-events: none;
+            z-index: 15;
+            opacity: 0;
+            transition: opacity 0.15s;
+        }
+        .guide-line-h {
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: var(--accent);
+            box-shadow: 0 0 6px var(--accent-glow);
+        }
+        .guide-line-v {
+            top: 0;
+            bottom: 0;
+            width: 1px;
+            background: var(--accent);
+            box-shadow: 0 0 6px var(--accent-glow);
+        }
+        .guide-line-h.visible,
+        .guide-line-v.visible {
+            opacity: 1;
+        }
+
+        /* 底部编辑工具栏 */
+        .edit-toolbar-bottom {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            padding: 6px 10px 8px;
+            flex-shrink: 0;
+            background: rgba(255, 255, 255, 0.78);
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
+            border-top: 1px solid rgba(0, 0, 0, 0.05);
+            z-index: 10;
+            flex-wrap: wrap;
+            justify-content: center;
+            overflow-x: auto;
+        }
+        .edit-toolbar-bottom::-webkit-scrollbar {
+            display: none;
+        }
+        .tool-chip {
+            display: flex;
+            align-items: center;
+            gap: 3px;
+            padding: 6px 10px;
+            border-radius: var(--r-full);
+            font-size: 9px;
+            font-weight: 600;
+            cursor: pointer;
+            border: 1px solid rgba(0, 0, 0, 0.07);
+            background: #fff;
+            color: var(--text-secondary);
+            transition: all 0.15s;
+            font-family: var(--font);
+            white-space: nowrap;
+            letter-spacing: 0.02em;
+            box-shadow: var(--shadow-xs);
+            flex-shrink: 0;
+        }
+        .tool-chip:active {
+            background: var(--accent-light);
+            border-color: var(--accent);
+            color: var(--accent);
+            transform: scale(0.93);
+        }
+        .tool-chip.accent {
+            background: var(--accent);
+            color: #fff;
+            border-color: transparent;
+            font-weight: 700;
+        }
+        .tool-chip.danger {
+            color: var(--danger);
+        }
+        .tool-chip .emoji {
+            font-size: 12px;
+        }
+        .tool-separator {
+            width: 1px;
+            height: 18px;
+            background: rgba(0, 0, 0, 0.08);
+            flex-shrink: 0;
+            margin: 0 2px;
+        }
+        .sig-count-badge {
+            font-size: 8px;
+            font-weight: 700;
+            color: var(--accent);
+            background: var(--accent-light);
+            padding: 4px 8px;
+            border-radius: var(--r-full);
+            letter-spacing: 0.03em;
+            flex-shrink: 0;
+        }
+
+        /* Toast */
+        .toast-pop {
+            position: absolute;
+            top: 14px;
+            left: 50%;
+            transform: translateX(-50%) translateY(-140px);
+            background: #1a1c26;
+            color: #fff;
+            padding: 7px 15px;
+            border-radius: 16px;
+            font-size: 10px;
+            font-weight: 600;
+            z-index: 30;
+            letter-spacing: 0.03em;
+            pointer-events: none;
+            transition: transform 0.4s var(--ease-spring);
+            white-space: nowrap;
+            box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .toast-pop.show {
+            transform: translateX(-50%) translateY(0);
+        }
+
+        @media (max-width: 430px) {
+            .phone-frame {
+                width: 96vw;
+                height: auto;
+                aspect-ratio: 390/760;
+                max-height: 96vh;
+                border-radius: 28px;
+                padding: 6px;
+            }
+            .phone-screen {
+                border-radius: 20px;
+            }
+            .dynamic-island {
+                width: 56px;
+                height: 16px;
+                top: 4px;
+            }
+            .contract-paper {
+                padding: 10px 8px;
+            }
+            .edit-toolbar-bottom {
+                gap: 3px;
+                padding: 4px 6px 6px;
+            }
+            .tool-chip {
+                padding: 5px 7px;
+                font-size: 8px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="phone-frame">
+        <div class="phone-screen">
+            <div class="dynamic-island"></div>
+            <div class="status-bar-mini">
+                <span>9:41</span>
+                <span style="display:flex;gap:3px;opacity:0.6;">
+                    <svg width="10" height="10" fill="currentColor" viewBox="0 0 24 24"><path d="M1 9l2 2c4.97-4.97 13.03-4.97 18 0l2-2z"/></svg>
+                    <svg width="12" height="7" fill="currentColor" viewBox="0 0 24 24"><rect x="1" y="4" width="20" height="14" rx="2" stroke="currentColor" fill="none" stroke-width="2"/><rect x="2" y="6" width="16" height="10" rx="1" fill="currentColor"/></svg>
+                </span>
+            </div>
+
+            <!-- 顶部栏 -->
+            <div class="top-bar">
+                <button class="btn-back" onclick="showToast('返回文件列表')">← 返回</button>
+                <span class="file-name-label">采购协议2025.pdf</span>
+                <button class="btn-save" onclick="showToast('已保存 ✓')">保存</button>
+            </div>
+
+            <!-- 合同编辑区 -->
+            <div class="contract-editor" id="contractEditor">
+                <!-- 合同纸张 -->
+                <div class="contract-paper" id="contractPaper">
+                    <div class="doc-title">采购协议书</div>
+                    <div class="doc-body">
+                        <span class="line">甲方（采购方）：__________________</span>
+                        <span class="line">乙方（供应方）：__________________</span>
+                        <span class="line short">根据《中华人民共和国合同法》及相关法律法规，</span>
+                        <span class="line">双方经友好协商，就甲方向乙方采购相关事宜达成</span>
+                        <span class="line medium">如下协议条款，以资共同遵守。</span>
+                        <span class="line short">&nbsp;</span>
+                        <span class="line">一、采购内容及数量</span>
+                        <span class="line short">甲方同意向乙方采购以下物品：</span>
+                        <span class="line medium">1. 产品名称：__________________</span>
+                        <span class="line">2. 数量：__________________</span>
+                        <span class="line short">3. 单价：__________________</span>
+                        <span class="line short">&nbsp;</span>
+                        <span class="line">二、质量标准</span>
+                        <span class="line short">乙方所供产品须符合国家相关质量标准。</span>
+                    </div>
+                    <!-- 签名位虚线参考 -->
+                    <div class="sig-slot-ghost" style="bottom:62px;right:28px;width:110px;height:32px;"></div>
+                    <div class="sig-slot-ghost" style="bottom:28px;right:24px;width:100px;height:30px;"></div>
+                </div>
+
+                <!-- 签名图层1 - 甲方 -->
+                <div class="sig-layer selected" id="sig1"
+                style="bottom:58px;right:30px;width:104px;height:28px;"
+                data-name="李大明">
+                <span class="sig-text" style="font-size:18px;">李大明</span>
+                <div class="sig-handles">
+                    <span class="sig-handle tl"></span>
+                    <span class="sig-handle tr"></span>
+                    <span class="sig-handle bl"></span>
+                    <span class="sig-handle br"></span>
+                    <span class="sig-handle rotate"></span>
+                </div>
+            </div>
+
+            <!-- 签名图层2 - 乙方 -->
+            <div class="sig-layer" id="sig2"
+            style="bottom:24px;right:26px;width:94px;height:26px;"
+            data-name="公司章">
+            <span class="sig-text" style="font-size:15px;">张总</span>
+            <div class="sig-handles">
+                <span class="sig-handle tl"></span>
+                <span class="sig-handle tr"></span>
+                <span class="sig-handle bl"></span>
+                <span class="sig-handle br"></span>
+                <span class="sig-handle rotate"></span>
+            </div>
+        </div>
+
+        <!-- 对齐辅助线 -->
+        <div class="guide-line-h" id="guideH"></div>
+        <div class="guide-line-v" id="guideV"></div>
+    </div>
+
+    <!-- 底部编辑工具栏 -->
+    <div class="edit-toolbar-bottom">
+        <span class="sig-count-badge">2个签名</span>
+        <span class="tool-separator"></span>
+        <button class="tool-chip" onclick="showToast('撤销')"><span class="emoji">↩️</span> 撤销</button>
+        <button class="tool-chip" onclick="showToast('重做')"><span class="emoji">↪️</span> 重做</button>
+        <span class="tool-separator"></span>
+        <button class="tool-chip" id="lockBtn" onclick="toggleLock()"><span class="emoji">🔓</span> 锁定</button>
+        <button class="tool-chip" onclick="rotateSig()"><span class="emoji">🔄</span> 旋转15°</button>
+        <button class="tool-chip" onclick="resetSig()"><span class="emoji">↺</span> 重置</button>
+        <span class="tool-separator"></span>
+        <button class="tool-chip danger" onclick="deleteSelected()"><span class="emoji">🗑️</span> 删除</button>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast-pop" id="toastPop"><span>✓</span><span id="toastMsg">操作成功</span></div>
+</div>
+</div>
+
+<script>
+    (function() {
+        const contractEditor = document.getElementById('contractEditor');
+        const toastEl = document.getElementById('toastPop');
+        const toastMsgEl = document.getElementById('toastMsg');
+        const guideH = document.getElementById('guideH');
+        const guideV = document.getElementById('guideV');
+        const lockBtn = document.getElementById('lockBtn');
+        let toastTimer = null;
+        let selectedSig = document.getElementById('sig1');
+        let isDragging = false;
+        let isResizing = false;
+        let isRotating = false;
+        let startX, startY, startLeft, startTop, startWidth, startHeight;
+        let startAngle, startRotation;
+        let activeHandle = null;
+        let initialPinchDistance = 0;
+        let initialPinchAngle = 0;
+        let initialWidth = 0;
+        let initialHeight = 0;
+        let initialRotation = 0;
+        let locked = false;
+
+        function showToast(msg) {
+            clearTimeout(toastTimer);
+            toastMsgEl.textContent = msg;
+            toastEl.classList.add('show');
+            toastTimer = setTimeout(() => toastEl.classList.remove('show'), 1600);
+        }
+
+        // 选中签名
+        function selectSig(sig) {
+            if (locked && sig === selectedSig) return;
+            document.querySelectorAll('.sig-layer').forEach(s => s.classList.remove('selected'));
+            sig.classList.add('selected');
+            selectedSig = sig;
+            updateLockButtonState();
+        }
+
+        // 点击合同空白处取消选中
+        contractEditor.addEventListener('pointerdown', function(e) {
+            if (e.target === contractEditor || e.target.closest('.contract-paper') && !e.target.closest(
+                    '.sig-layer')) {
+                document.querySelectorAll('.sig-layer').forEach(s => s.classList.remove('selected'));
+                selectedSig = null;
+                updateLockButtonState();
+                hideGuides();
+            }
+        });
+
+        // 签名图层交互
+        document.querySelectorAll('.sig-layer').forEach(sig => {
+            // 点击选中
+            sig.addEventListener('pointerdown', function(e) {
+                if (e.target.closest('.sig-handle')) return; // 让手柄处理
+                selectSig(sig);
+                isDragging = true;
+                const rect = sig.getBoundingClientRect();
+                const editorRect = contractEditor.getBoundingClientRect();
+                startX = e.clientX;
+                startY = e.clientY;
+                startLeft = sig.offsetLeft;
+                startTop = sig.offsetTop;
+                sig.classList.add('dragging');
+                sig.setPointerCapture(e.pointerId);
+                e.preventDefault();
+            });
+
+            // 手柄拖拽缩放
+            sig.querySelectorAll('.sig-handle').forEach(handle => {
+                handle.addEventListener('pointerdown', function(e) {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    selectSig(sig);
+                    isResizing = true;
+                    activeHandle = handle;
+                    const rect = sig.getBoundingClientRect();
+                    startX = e.clientX;
+                    startY = e.clientY;
+                    startWidth = rect.width;
+                    startHeight = rect.height;
+                    startLeft = sig.offsetLeft;
+                    startTop = sig.offsetTop;
+                    sig.setPointerCapture(e.pointerId);
+                });
+            });
+
+            // 旋转手柄
+            sig.querySelector('.sig-handle.rotate')?.addEventListener('pointerdown', function(e) {
+                e.stopPropagation();
+                e.preventDefault();
+                selectSig(sig);
+                isRotating = true;
+                const rect = sig.getBoundingClientRect();
+                const cx = rect.left + rect.width / 2;
+                const cy = rect.top + rect.height / 2;
+                startAngle = Math.atan2(e.clientY - cy, e.clientX - cx) * 180 / Math.PI;
+                startRotation = parseFloat(sig.dataset.rotation || 0);
+                sig.setPointerCapture(e.pointerId);
+            });
+        });
+
+        // 全局指针移动
+        document.addEventListener('pointermove', function(e) {
+            if (!isDragging && !isResizing && !isRotating) return;
+
+            if (isDragging && selectedSig && !locked) {
+                const dx = e.clientX - startX;
+                const dy = e.clientY - startY;
+                let newLeft = startLeft + dx;
+                let newTop = startTop + dy;
+                const editorRect = contractEditor.getBoundingClientRect();
+                const sigRect = selectedSig.getBoundingClientRect();
+                newLeft = Math.max(0, Math.min(newLeft, editorRect.width - sigRect.width));
+                newTop = Math.max(0, Math.min(newTop, editorRect.height - sigRect.height));
+                selectedSig.style.left = newLeft + 'px';
+                selectedSig.style.top = newTop + 'px';
+                selectedSig.style.right = 'auto';
+                selectedSig.style.bottom = 'auto';
+                checkAlignment(selectedSig);
+            }
+
+            if (isResizing && selectedSig && activeHandle && !locked) {
+                const dx = e.clientX - startX;
+                const dy = e.clientY - startY;
+                let newW = startWidth;
+                let newH = startHeight;
+                let newL = startLeft;
+                let newT = startTop;
+                if (activeHandle.classList.contains('br') || activeHandle.classList.contains('tr')) {
+                    newW = Math.max(40, startWidth + dx);
+                }
+                if (activeHandle.classList.contains('bl') || activeHandle.classList.contains('br')) {
+                    newH = Math.max(14, startHeight + dy);
+                }
+                if (activeHandle.classList.contains('tl') || activeHandle.classList.contains('bl')) {
+                    newW = Math.max(40, startWidth - dx);
+                    newL = startLeft + (startWidth - newW);
+                }
+                if (activeHandle.classList.contains('tl') || activeHandle.classList.contains('tr')) {
+                    newH = Math.max(14, startHeight - dy);
+                    newT = startTop + (startHeight - newH);
+                }
+                selectedSig.style.width = newW + 'px';
+                selectedSig.style.height = newH + 'px';
+                selectedSig.style.left = newL + 'px';
+                selectedSig.style.top = newT + 'px';
+                selectedSig.style.right = 'auto';
+                selectedSig.style.bottom = 'auto';
+                // 同步缩放文字
+                const textEl = selectedSig.querySelector('.sig-text');
+                if (textEl) {
+                    const baseFontSize = selectedSig.dataset.baseFontSize || 18;
+                    const scale = newW / (parseFloat(selectedSig.dataset.originalWidth) || newW);
+                    textEl.style.fontSize = Math.max(8, Math.min(36, baseFontSize * scale)) + 'px';
+                }
+            }
+
+            if (isRotating && selectedSig && !locked) {
+                const rect = selectedSig.getBoundingClientRect();
+                const cx = rect.left + rect.width / 2;
+                const cy = rect.top + rect.height / 2;
+                const currentAngle = Math.atan2(e.clientY - cy, e.clientX - cx) * 180 / Math.PI;
+                const deltaAngle = currentAngle - startAngle;
+                const newRotation = startRotation + deltaAngle;
+                selectedSig.style.transform = `rotate(${newRotation}deg)`;
+                selectedSig.dataset.rotation = newRotation;
+            }
+        });
+
+        document.addEventListener('pointerup', function(e) {
+            if (isDragging && selectedSig) {
+                selectedSig.classList.remove('dragging');
+                hideGuides();
+            }
+            isDragging = false;
+            isResizing = false;
+            isRotating = false;
+            activeHandle = null;
+            if (selectedSig) {
+                // 保存原始尺寸
+                if (!selectedSig.dataset.originalWidth) {
+                    selectedSig.dataset.originalWidth = selectedSig.offsetWidth;
+                    selectedSig.dataset.baseFontSize = parseFloat(selectedSig.querySelector('.sig-text')
+                        ?.style?.fontSize || 18);
+                }
+            }
+        });
+
+        // 对齐检测
+        function checkAlignment(sig) {
+            hideGuides();
+            if (!sig) return;
+            const editorRect = contractEditor.getBoundingClientRect();
+            const sigRect = sig.getBoundingClientRect();
+            const sigCX = sigRect.left + sigRect.width / 2 - editorRect.left;
+            const sigCY = sigRect.top + sigRect.height / 2 - editorRect.top;
+            const threshold = 6;
+            // 水平居中
+            if (Math.abs(sigCX - editorRect.width / 2) < threshold) {
+                guideV.style.left = editorRect.width / 2 + 'px';
+                guideV.classList.add('visible');
+            }
+            // 垂直居中
+            if (Math.abs(sigCY - editorRect.height / 2) < threshold) {
+                guideH.style.top = editorRect.height / 2 + 'px';
+                guideH.classList.add('visible');
+            }
+            // 检查与其他签名的对齐
+            document.querySelectorAll('.sig-layer').forEach(other => {
+                if (other === sig || !other.classList.contains('selected') && other !== sig) return;
+                const otherRect = other.getBoundingClientRect();
+                const otherCY = otherRect.top + otherRect.height / 2 - editorRect.top;
+                const otherCX = otherRect.left + otherRect.width / 2 - editorRect.left;
+                if (Math.abs(sigCY - otherCY) < threshold) {
+                    guideH.style.top = otherCY + 'px';
+                    guideH.classList.add('visible');
+                }
+                if (Math.abs(sigCX - otherCX) < threshold) {
+                    guideV.style.left = otherCX + 'px';
+                    guideV.classList.add('visible');
+                }
+            });
+        }
+
+        function hideGuides() {
+            guideH.classList.remove('visible');
+            guideV.classList.remove('visible');
+        }
+
+        // 工具栏功能
+        function toggleLock() {
+            locked = !locked;
+            updateLockButtonState();
+            if (locked) {
+                document.querySelectorAll('.sig-layer').forEach(s => s.classList.remove('selected'));
+                selectedSig = null;
+                hideGuides();
+                showToast('签名已锁定 🔒');
+            } else {
+                showToast('签名已解锁 🔓');
+            }
+        }
+
+        function updateLockButtonState() {
+            if (locked) {
+                lockBtn.innerHTML = '<span class="emoji">🔒</span> 解锁';
+                lockBtn.classList.add('accent');
+                document.querySelectorAll('.sig-layer').forEach(s => s.style.pointerEvents = 'none');
+            } else {
+                lockBtn.innerHTML = '<span class="emoji">🔓</span> 锁定';
+                lockBtn.classList.remove('accent');
+                document.querySelectorAll('.sig-layer').forEach(s => s.style.pointerEvents = 'auto');
+            }
+        }
+
+        function rotateSig() {
+            if (!selectedSig || locked) {
+                showToast('请先选择签名');
+                return;
+            }
+            const currentRotation = parseFloat(selectedSig.dataset.rotation || 0);
+            const newRotation = currentRotation - 15;
+            selectedSig.style.transform = `rotate(${newRotation}deg)`;
+            selectedSig.dataset.rotation = newRotation;
+            showToast('旋转 -15°');
+        }
+
+        function resetSig() {
+            if (!selectedSig || locked) {
+                showToast('请先选择签名');
+                return;
+            }
+            selectedSig.style.transform = 'rotate(0deg)';
+            selectedSig.dataset.rotation = 0;
+            const origW = parseFloat(selectedSig.dataset.originalWidth || selectedSig.offsetWidth);
+            const baseFont = parseFloat(selectedSig.dataset.baseFontSize || 18);
+            selectedSig.style.width = origW + 'px';
+            selectedSig.style.height = 'auto';
+            const textEl = selectedSig.querySelector('.sig-text');
+            if (textEl) textEl.style.fontSize = baseFont + 'px';
+            showToast('已重置签名');
+        }
+
+        function deleteSelected() {
+            if (!selectedSig || locked) {
+                showToast('请先选择签名');
+                return;
+            }
+            const name = selectedSig.dataset.name || '签名';
+            selectedSig.remove();
+            selectedSig = null;
+            hideGuides();
+            updateSigCount();
+            showToast(name + ' 已删除');
+        }
+
+        function updateSigCount() {
+            const count = document.querySelectorAll('.sig-layer').length;
+            const badge = document.querySelector('.sig-count-badge');
+            if (badge) badge.textContent = count + '个签名';
+        }
+
+        // 双指手势（缩放+旋转）
+        contractEditor.addEventListener('touchstart', function(e) {
+            if (e.touches.length === 2 && selectedSig && !locked) {
+                const t1 = e.touches[0];
+                const t2 = e.touches[1];
+                initialPinchDistance = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+                initialPinchAngle = Math.atan2(t2.clientY - t1.clientY, t2.clientX - t1.clientX) * 180 / Math.PI;
+                initialWidth = selectedSig.offsetWidth;
+                initialHeight = selectedSig.offsetHeight;
+                initialRotation = parseFloat(selectedSig.dataset.rotation || 0);
+                e.preventDefault();
+            }
+        }, { passive: false });
+
+        contractEditor.addEventListener('touchmove', function(e) {
+            if (e.touches.length === 2 && selectedSig && !locked && initialPinchDistance > 0) {
+                const t1 = e.touches[0];
+                const t2 = e.touches[1];
+                const currentDistance = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+                const currentAngle = Math.atan2(t2.clientY - t1.clientY, t2.clientX - t1.clientX) * 180 / Math.PI;
+                const scale = currentDistance / initialPinchDistance;
+                const angleDelta = currentAngle - initialPinchAngle;
+                const newW = Math.max(40, Math.min(300, initialWidth * scale));
+                const newH = newW * (initialHeight / initialWidth);
+                selectedSig.style.width = newW + 'px';
+                selectedSig.style.height = newH + 'px';
+                const newRotation = initialRotation + angleDelta;
+                selectedSig.style.transform = `rotate(${newRotation}deg)`;
+                selectedSig.dataset.rotation = newRotation;
+                const textEl = selectedSig.querySelector('.sig-text');
+                if (textEl) {
+                    const baseFont = parseFloat(selectedSig.dataset.baseFontSize || 18);
+                    textEl.style.fontSize = Math.max(8, Math.min(36, baseFont * scale)) + 'px';
+                }
+                e.preventDefault();
+            }
+        }, { passive: false });
+
+        contractEditor.addEventListener('touchend', function(e) {
+            if (e.touches.length < 2) {
+                initialPinchDistance = 0;
+                if (selectedSig && !selectedSig.dataset.originalWidth) {
+                    selectedSig.dataset.originalWidth = selectedSig.offsetWidth;
+                    selectedSig.dataset.baseFontSize = parseFloat(selectedSig.querySelector('.sig-text')?.style
+                        ?.fontSize || 18);
+                }
+            }
+        });
+
+        // 双击重置
+        document.querySelectorAll('.sig-layer').forEach(sig => {
+            sig.addEventListener('dblclick', function(e) {
+                if (locked) return;
+                selectSig(sig);
+                resetSig();
+            });
+        });
+
+        // 键盘快捷键
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Delete' || e.key === 'Backspace') {
+                if (selectedSig && !locked && document.activeElement === document.body) {
+                    deleteSelected();
+                }
+            }
+            if (e.key === 'Escape') {
+                document.querySelectorAll('.sig-layer').forEach(s => s.classList.remove('selected'));
+                selectedSig = null;
+                hideGuides();
+                updateLockButtonState();
+            }
+        });
+
+        // 暴露函数到全局
+        window.showToast = showToast;
+        window.toggleLock = toggleLock;
+        window.rotateSig = rotateSig;
+        window.resetSig = resetSig;
+        window.deleteSelected = deleteSelected;
+
+        // 初始化
+        updateSigCount();
+        console.log('✅ 签字大师 · 合同编辑页已就绪');
+        console.log('   📄 合同占主要面积 · 签名自动适配尺寸');
+        console.log('   ✋ 支持拖拽/双指缩放/旋转/对齐吸附');
+        console.log('   🎯 点击选中 · 手柄缩放 · 双击重置');
+        console.log('   ⌨️ 键盘Delete删除 · Esc取消选中');
+    })();
+</script>
+</body>
+</html>

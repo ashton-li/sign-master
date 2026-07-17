@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+    <title>签字大师 · SignPen — 横屏签字页</title>
+    <style>
+        :root {
+            --bg: #f5f6fa;
+            --surface: #ffffff;
+            --text: #1a1c26;
+            --text-secondary: #5a5d6e;
+            --text-tertiary: #9093a5;
+            --accent: #5856e0;
+            --accent-glow: rgba(88, 86, 224, 0.4);
+            --danger: #e74c5e;
+            --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
+            --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.08);
+            --shadow-lg: 0 8px 28px rgba(0, 0, 0, 0.12);
+            --r-sm: 8px;
+            --r-md: 14px;
+            --r-lg: 20px;
+            --r-full: 9999px;
+            --font: 'Inter', 'SF Pro Display', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+            --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+            --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+            --phone-w: 720px;
+            --phone-h: 360px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        html {
+            -webkit-font-smoothing: antialiased;
+        }
+        body {
+            font-family: var(--font);
+            background: #e8ecf3;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 16px;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+            overflow-x: hidden;
+            position: relative;
+        }
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background: radial-gradient(ellipse at 30% 50%, rgba(120, 100, 240, 0.05) 0%, transparent 60%),
+                radial-gradient(ellipse at 70% 50%, rgba(80, 180, 220, 0.04) 0%, transparent 60%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        /* 手机模拟器 — 横屏 */
+        .phone-frame {
+            position: relative;
+            z-index: 2;
+            width: var(--phone-w);
+            height: var(--phone-h);
+            max-width: 96vw;
+            background: #1a1c24;
+            border-radius: 34px;
+            padding: 8px;
+            box-shadow: 0 0 0 2px #2a2d38, 0 0 0 5px #15161e, 0 0 0 6px #3a3d48, 0 20px 60px rgba(0, 0, 0, 0.45);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            flex-shrink: 0;
+            transition: all 0.4s var(--ease-smooth);
+        }
+        .phone-screen {
+            width: 100%;
+            height: 100%;
+            background: #fafbfd;
+            border-radius: 26px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+        }
+        /* 灵动岛 — 横屏在左侧 */
+        .dynamic-island {
+            position: absolute;
+            top: 50%;
+            left: 6px;
+            transform: translateY(-50%);
+            width: 4px;
+            height: 60px;
+            background: #0d0e14;
+            border-radius: 8px;
+            z-index: 20;
+        }
+
+        /* ============ 签字主布局 ============ */
+        .sign-root {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            position: relative;
+            z-index: 2;
+        }
+
+        /* 顶部信息栏 — 极窄，仅显示标题和完成按钮 */
+        .sign-top-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 14px 4px;
+            flex-shrink: 0;
+            background: transparent;
+            z-index: 10;
+        }
+        .sign-top-bar .sig-target-label {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text);
+            letter-spacing: -0.01em;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .sign-top-bar .sig-target-label .dot-indicator {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--accent);
+            animation: dotPulse 2s ease-in-out infinite;
+        }
+        @keyframes dotPulse {
+            0%,
+            100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+            50% {
+                opacity: 0.3;
+                transform: scale(1.8);
+            }
+        }
+        .btn-done {
+            padding: 6px 16px;
+            border-radius: var(--r-full);
+            font-size: 11px;
+            font-weight: 700;
+            background: var(--accent);
+            color: #fff;
+            border: none;
+            cursor: pointer;
+            letter-spacing: 0.02em;
+            box-shadow: 0 4px 14px var(--accent-glow);
+            font-family: var(--font);
+            transition: all 0.2s var(--ease-smooth);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            flex-shrink: 0;
+        }
+        .btn-done:active {
+            transform: scale(0.92);
+            box-shadow: 0 2px 6px rgba(88, 86, 224, 0.2);
+        }
+        .btn-cancel-mini {
+            padding: 6px 12px;
+            border-radius: var(--r-full);
+            font-size: 10px;
+            font-weight: 600;
+            background: #fff;
+            color: var(--text-secondary);
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            cursor: pointer;
+            letter-spacing: 0.02em;
+            font-family: var(--font);
+            flex-shrink: 0;
+            transition: all 0.2s var(--ease-smooth);
+        }
+        .btn-cancel-mini:active {
+            background: #f5f5f8;
+        }
+
+        /* 画布区域 — 占据所有剩余空间 */
+        .sign-canvas-full {
+            flex: 1;
+            margin: 4px 10px;
+            background: #ffffff;
+            border-radius: var(--r-md);
+            position: relative;
+            border: 2px solid rgba(0, 0, 0, 0.05);
+            box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.03);
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .sign-canvas-full .guide-line-horizontal {
+            position: absolute;
+            left: 8%;
+            right: 8%;
+            bottom: 32%;
+            height: 1px;
+            background: linear-gradient(90deg, transparent 0%, rgba(160, 165, 185, 0.4) 20%, rgba(160, 165, 185, 0.5) 50%, rgba(160, 165, 185, 0.4) 80%, transparent 100%);
+            pointer-events: none;
+            z-index: 1;
+        }
+        .sign-canvas-full .guide-text-light {
+            position: absolute;
+            bottom: calc(32% + 8px);
+            right: 10%;
+            font-size: 9px;
+            color: #c5c9d4;
+            letter-spacing: 0.04em;
+            pointer-events: none;
+            z-index: 1;
+            font-weight: 500;
+        }
+        .sign-preview-placeholder {
+            font-family: 'Caveat', 'KaiTi', 'STKaiti', 'PingFang SC', cursive, serif;
+            font-size: 32px;
+            color: #d5d8e2;
+            letter-spacing: 4px;
+            z-index: 2;
+            pointer-events: none;
+            transform: rotate(-1.5deg);
+        }
+
+        /* 底部工具栏 — 浮动胶囊，单手拇指操作区 */
+        .sign-toolbar-floating {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 14px 10px;
+            flex-shrink: 0;
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-top: 1px solid rgba(0, 0, 0, 0.05);
+            z-index: 10;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .tool-group {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: #fff;
+            padding: 5px 10px;
+            border-radius: var(--r-full);
+            box-shadow: var(--shadow-sm);
+            border: 1px solid rgba(0, 0, 0, 0.04);
+        }
+        .tool-label-micro {
+            font-size: 7px;
+            font-weight: 700;
+            color: var(--text-tertiary);
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            white-space: nowrap;
+        }
+        .color-dots-row {
+            display: flex;
+            gap: 5px;
+            align-items: center;
+        }
+        .color-dot-mini {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: all 0.2s var(--ease-spring);
+            flex-shrink: 0;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+        }
+        .color-dot-mini.active {
+            border-color: #fff;
+            box-shadow: 0 0 0 3px var(--accent), 0 2px 6px rgba(0, 0, 0, 0.12);
+            transform: scale(1.12);
+        }
+        .size-slider-mini {
+            -webkit-appearance: none;
+            width: 52px;
+            height: 4px;
+            border-radius: 2px;
+            background: linear-gradient(90deg, #d0d5e0 0%, var(--accent) 100%);
+            outline: none;
+            cursor: pointer;
+        }
+        .size-slider-mini::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #fff;
+            border: 2px solid var(--accent);
+            cursor: pointer;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+        }
+        .tool-btn-sm {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            background: #fff;
+            color: var(--text-secondary);
+            font-size: 14px;
+            transition: all 0.15s var(--ease-smooth);
+            flex-shrink: 0;
+            box-shadow: var(--shadow-sm);
+        }
+        .tool-btn-sm:active {
+            background: #f0f0f5;
+            transform: scale(0.9);
+        }
+        .tool-btn-sm.eraser-active {
+            background: #fde8ec;
+            border-color: var(--danger);
+            color: var(--danger);
+        }
+        .tool-btn-sm.accent-active {
+            background: #eef0ff;
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        /* Toast */
+        .toast-pop {
+            position: absolute;
+            top: 12px;
+            left: 50%;
+            transform: translateX(-50%) translateY(-130px);
+            background: #1a1c26;
+            color: #fff;
+            padding: 8px 16px;
+            border-radius: 18px;
+            font-size: 10px;
+            font-weight: 600;
+            z-index: 30;
+            letter-spacing: 0.03em;
+            pointer-events: none;
+            transition: transform 0.4s var(--ease-spring);
+            white-space: nowrap;
+            box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .toast-pop.show {
+            transform: translateX(-50%) translateY(0);
+        }
+
+        @media (max-width: 760px) {
+            .phone-frame {
+                width: 98vw;
+                height: auto;
+                aspect-ratio: 720/360;
+                border-radius: 24px;
+                padding: 5px;
+            }
+            .phone-screen {
+                border-radius: 18px;
+            }
+            .dynamic-island {
+                width: 3px;
+                height: 40px;
+                left: 4px;
+            }
+            .sign-toolbar-floating {
+                gap: 4px;
+                padding: 5px 8px 7px;
+            }
+            .tool-group {
+                padding: 4px 7px;
+                gap: 3px;
+            }
+            .color-dot-mini {
+                width: 16px;
+                height: 16px;
+            }
+            .tool-btn-sm {
+                width: 26px;
+                height: 26px;
+                font-size: 12px;
+            }
+            .size-slider-mini {
+                width: 38px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 手机模拟器 — 横屏 -->
+    <div class="phone-frame">
+        <div class="phone-screen">
+            <!-- 灵动岛 -->
+            <div class="dynamic-island"></div>
+
+            <!-- 签字主布局 -->
+            <div class="sign-root">
+                <!-- 顶部栏：极简，仅显示签名目标 + 操作按钮 -->
+                <div class="sign-top-bar">
+                    <button class="btn-cancel-mini" onclick="showToast('已取消')">✕ 取消</button>
+                    <div class="sig-target-label">
+                        <span class="dot-indicator"></span> 甲方签字
+                    </div>
+                    <button class="btn-done" onclick="showToast('签名已确认 ✓')">
+                        ✓ 完成
+                    </button>
+                </div>
+
+                <!-- 签字画布 — 占据全部剩余空间 -->
+                <div class="sign-canvas-full" id="signCanvas">
+                    <div class="guide-line-horizontal"></div>
+                    <span class="guide-text-light">请在此处签名</span>
+                    <span class="sign-preview-placeholder">签字区域</span>
+                </div>
+
+                <!-- 底部浮动工具栏 — 单手拇指操作区 -->
+                <div class="sign-toolbar-floating">
+                    <!-- 颜色选择 -->
+                    <div class="tool-group">
+                        <span class="tool-label-micro">颜色</span>
+                        <div class="color-dots-row" id="colorDots">
+                            <span class="color-dot-mini active" data-color="#1a1c26" style="background:#1a1c26;"></span>
+                            <span class="color-dot-mini" data-color="#1e3a5f" style="background:#1e3a5f;"></span>
+                            <span class="color-dot-mini" data-color="#2563eb" style="background:#2563eb;"></span>
+                            <span class="color-dot-mini" data-color="#c1121f" style="background:#c1121f;"></span>
+                        </div>
+                    </div>
+
+                    <!-- 粗细调节 -->
+                    <div class="tool-group">
+                        <span class="tool-label-micro">粗细</span>
+                        <div style="width:8px;height:8px;border-radius:50%;background:#1a1c26;flex-shrink:0;" id="sizePreviewDot"></div>
+                        <input type="range" class="size-slider-mini" id="sizeSlider" min="1" max="12" value="3" oninput="updateSizePreview()">
+                    </div>
+
+                    <!-- 操作按钮组 -->
+                    <div class="tool-group" style="gap:4px;">
+                        <button class="tool-btn-sm" title="撤销" onclick="showToast('撤销')">↩️</button>
+                        <button class="tool-btn-sm" title="重做" onclick="showToast('重做')">↪️</button>
+                        <button class="tool-btn-sm" id="eraserBtn" title="橡皮擦" onclick="toggleEraser()">🧹</button>
+                        <button class="tool-btn-sm" title="清空" onclick="showToast('画布已清空')">🗑️</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Toast -->
+            <div class="toast-pop" id="toastPop"><span>✓</span><span id="toastMsg">操作成功</span></div>
+        </div>
+    </div>
+
+    <script>
+        const toastEl = document.getElementById('toastPop');
+        const toastMsgEl = document.getElementById('toastMsg');
+        const eraserBtn = document.getElementById('eraserBtn');
+        const sizeSlider = document.getElementById('sizeSlider');
+        const sizePreviewDot = document.getElementById('sizePreviewDot');
+        let toastTimer = null;
+
+        function showToast(msg) {
+            clearTimeout(toastTimer);
+            toastMsgEl.textContent = msg;
+            toastEl.classList.add('show');
+            toastTimer = setTimeout(() => toastEl.classList.remove('show'), 1500);
+        }
+
+        function toggleEraser() {
+            eraserBtn.classList.toggle('eraser-active');
+            if (eraserBtn.classList.contains('eraser-active')) {
+                showToast('橡皮擦：开启');
+            } else {
+                showToast('橡皮擦：关闭');
+            }
+        }
+
+        function updateSizePreview() {
+            const val = parseInt(sizeSlider.value);
+            const size = Math.max(4, val * 2.2);
+            sizePreviewDot.style.width = size + 'px';
+            sizePreviewDot.style.height = size + 'px';
+        }
+
+        // 颜色选择
+        document.getElementById('colorDots').addEventListener('click', function(e) {
+            const dot = e.target.closest('.color-dot-mini');
+            if (!dot) return;
+            document.querySelectorAll('.color-dot-mini').forEach(d => d.classList.remove('active'));
+            dot.classList.add('active');
+            const color = dot.dataset.color;
+            sizePreviewDot.style.background = color;
+            showToast('颜色已切换');
+        });
+
+        // 初始化大小预览
+        updateSizePreview();
+
+        console.log('✅ 签字大师 · 横屏签字页已就绪');
+        console.log('   ✍️ 画布占满屏幕 · 单手工具在底部');
+        console.log('   🎨 颜色/粗细/橡皮擦 · 拇指操作区');
+    </script>
+</body>
+</html>

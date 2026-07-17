@@ -1,0 +1,28 @@
+{
+  "name": "签字大师",
+  "appid": "__UNI__SIGNMASTER",
+  "description": "签字大师 1.0 纯前端电子签署小程序",
+  "versionName": "1.0.0",
+  "versionCode": "100",
+  "transformPx": false,
+  "mp-weixin": {
+    "appid": "wxc58b45a697d18a02",
+    "lazyCodeLoading": "requiredComponents",
+    "optimization": {
+      "subPackages": true
+    },
+    "setting": {
+      "urlCheck": false,
+      "es6": true,
+      "postcss": true,
+      "minified": true
+    },
+    "usingComponents": true
+  },
+  "h5": {
+    "router": {
+      "mode": "hash"
+    },
+    "title": "签字大师"
+  }
+}
