@@ -1,4 +1,5 @@
 import { ensureWriteCapacity } from '../storage/capacity.js'
+import jsfeat from 'jsfeat'
 
 function luminance(data, offset) {
   return data[offset] * 0.299 + data[offset + 1] * 0.587 + data[offset + 2] * 0.114
@@ -37,9 +38,41 @@ function polygonArea(points) {
   return Math.abs(area) / 2
 }
 
+function createCannyEdges(luma, width, height) {
+  const source = new jsfeat.matrix_t(width, height, jsfeat.U8_t | jsfeat.C1_t)
+  const blurred = new jsfeat.matrix_t(width, height, jsfeat.U8_t | jsfeat.C1_t)
+  const edges = new jsfeat.matrix_t(width, height, jsfeat.U8_t | jsfeat.C1_t)
+  source.data.set(luma)
+  jsfeat.imgproc.gaussian_blur(source, blurred, 5, 0)
+  jsfeat.imgproc.canny(blurred, edges, 18, 54)
+  return edges.data
+}
+
 function detectContrastPaperQuad(luma, gridWidth, gridHeight, sampleStep, width, height) {
-  // Fit directional contrast lines instead of relying on one bright region;
-  // this separates paper from reflective surfaces connected to its boundary.
+  const cannyEdges = createCannyEdges(luma, gridWidth, gridHeight)
+  const directionalContrast = (mode, horizontal, primary, secondary, distance = 3) => {
+    if (secondary < distance + 1 || secondary >= (horizontal ? gridHeight : gridWidth) - distance - 1) return -255
+    if (horizontal) {
+      const before = luma[(secondary - distance) * gridWidth + primary]
+      const after = luma[(secondary + distance) * gridWidth + primary]
+      return mode === 'top' ? after - before : before - after
+    }
+    const before = luma[primary * gridWidth + secondary - distance]
+    const after = luma[primary * gridWidth + secondary + distance]
+    return mode === 'left' ? after - before : before - after
+  }
+  const edgeStrength = (horizontal, primary, secondary) => {
+    let strongest = 0
+    for (let offset = -1; offset <= 1; offset += 1) {
+      const x = horizontal ? primary : secondary + offset
+      const y = horizontal ? secondary + offset : primary
+      if (x >= 0 && y >= 0 && x < gridWidth && y < gridHeight) strongest = Math.max(strongest, cannyEdges[y * gridWidth + x])
+    }
+    return strongest
+  }
+
+  // This is the document-scanner pipeline used by OpenCV-style scanners:
+  // Canny edges are grouped into directional lines, then locally refined.
   const findLine = (mode) => {
     const horizontal = mode === 'top' || mode === 'bottom'
     const primarySize = horizontal ? gridWidth : gridHeight
@@ -65,25 +98,17 @@ function detectContrastPaperQuad(luma, gridWidth, gridHeight, sampleStep, width,
         }
         for (let primary = 3; primary < primarySize - 3; primary += 1) {
           const secondary = Math.round(slope * primary + intercept)
-          let contrast = -255
-          if (secondary >= 4 && secondary < secondarySize - 4) {
-            if (horizontal) {
-              const before = luma[(secondary - 3) * gridWidth + primary]
-              const after = luma[(secondary + 3) * gridWidth + primary]
-              contrast = mode === 'top' ? after - before : before - after
-            } else {
-              const before = luma[primary * gridWidth + secondary - 3]
-              const after = luma[primary * gridWidth + secondary + 3]
-              contrast = mode === 'left' ? after - before : before - after
-            }
-          }
-          if (contrast >= 15) {
+          const contrast = secondary >= 4 && secondary < secondarySize - 4
+            ? directionalContrast(mode, horizontal, primary, secondary)
+            : -255
+          const edge = secondary >= 1 && secondary < secondarySize - 1 ? edgeStrength(horizontal, primary, secondary) : 0
+          if (contrast >= 10 && (edge || contrast >= 18)) {
             if (segmentStart < 0) {
               segmentStart = primary
               segmentScore = 0
             }
             lastGood = primary
-            segmentScore += Math.min(120, contrast)
+            segmentScore += Math.min(150, contrast + edge * 0.16)
           } else if (segmentStart >= 0 && primary - lastGood <= 3) {
             segmentScore += Math.max(0, contrast) * 0.2
           } else if (segmentStart >= 0) {
@@ -96,7 +121,33 @@ function detectContrastPaperQuad(luma, gridWidth, gridHeight, sampleStep, width,
         commitSegment()
       }
     }
-    return best
+    if (!best) return null
+    const points = []
+    for (let primary = best.start; primary <= best.end; primary += 1) {
+      const predicted = best.slope * primary + best.intercept
+      let selected = null
+      for (let secondary = Math.round(predicted) - 5; secondary <= Math.round(predicted) + 5; secondary += 1) {
+        if (secondary < 4 || secondary >= secondarySize - 4) continue
+        const edge = edgeStrength(horizontal, primary, secondary)
+        const contrast = directionalContrast(mode, horizontal, primary, secondary, 3)
+        const score = edge * 0.22 + Math.max(0, contrast)
+        if (edge && contrast >= 4 && (!selected || score > selected.score)) selected = { primary, secondary, score }
+      }
+      if (selected) points.push(selected)
+    }
+    if (points.length < Math.max(8, primarySize * 0.12)) return best
+    const fit = (samples) => {
+      const weight = samples.reduce((sum, point) => sum + point.score, 0)
+      const meanPrimary = samples.reduce((sum, point) => sum + point.primary * point.score, 0) / weight
+      const meanSecondary = samples.reduce((sum, point) => sum + point.secondary * point.score, 0) / weight
+      const denominator = samples.reduce((sum, point) => sum + point.score * Math.pow(point.primary - meanPrimary, 2), 0)
+      const slope = denominator ? samples.reduce((sum, point) => sum + point.score * (point.primary - meanPrimary) * (point.secondary - meanSecondary), 0) / denominator : best.slope
+      return { slope, intercept:meanSecondary - slope * meanPrimary }
+    }
+    let refined = fit(points)
+    const inliers = points.filter((point) => Math.abs(point.secondary - (refined.slope * point.primary + refined.intercept)) <= 2.5)
+    if (inliers.length >= Math.max(8, points.length * 0.55)) refined = fit(inliers)
+    return { ...best, ...refined, edgeSupport:inliers.length / Math.max(1, best.end - best.start + 1) }
   }
 
   const top = findLine('top')
@@ -133,13 +184,13 @@ function detectContrastPaperQuad(luma, gridWidth, gridHeight, sampleStep, width,
   return {
     topLeft:toSource(topLeft), topRight:toSource(topRight),
     bottomRight:toSource(bottomRight), bottomLeft:toSource(bottomLeft),
-    confidence, method:'paper-contrast'
+    confidence, method:'paper-canny'
   }
 }
 
 export function detectPaperQuad(imageData, width, height) {
   if (!imageData?.length || width < 24 || height < 24) return emptyPaperQuad(width, height)
-  const sampleStep = Math.max(1, Math.ceil(Math.max(width, height) / 180))
+  const sampleStep = Math.max(1, Math.ceil(Math.max(width, height) / 280))
   const gridWidth = Math.ceil(width / sampleStep)
   const gridHeight = Math.ceil(height / sampleStep)
   const luma = new Uint8Array(gridWidth * gridHeight)
@@ -404,6 +455,60 @@ export function stabilizeDocumentQuad(quad, width, height) {
   return reliable ? quad : fullImageQuad(width, height)
 }
 
+function scaleDocumentQuad(quad, scaleX, scaleY) {
+  const scalePoint = (point) => ({ x:point.x * scaleX, y:point.y * scaleY })
+  return {
+    ...quad,
+    topLeft:scalePoint(quad.topLeft),
+    topRight:scalePoint(quad.topRight),
+    bottomRight:scalePoint(quad.bottomRight),
+    bottomLeft:scalePoint(quad.bottomLeft)
+  }
+}
+
+function createPerspectiveMap(quad, outputWidth, outputHeight) {
+  const matrix = new jsfeat.matrix_t(3, 3, jsfeat.F32_t | jsfeat.C1_t)
+  jsfeat.math.perspective_4point_transform(
+    matrix,
+    0, 0, quad.topLeft.x, quad.topLeft.y,
+    outputWidth - 1, 0, quad.topRight.x, quad.topRight.y,
+    outputWidth - 1, outputHeight - 1, quad.bottomRight.x, quad.bottomRight.y,
+    0, outputHeight - 1, quad.bottomLeft.x, quad.bottomLeft.y
+  )
+  return matrix.data
+}
+
+function sampleBilinear(imageData, width, height, sourceX, sourceY, output, targetOffset) {
+  const x = Math.max(0, Math.min(width - 1, sourceX))
+  const y = Math.max(0, Math.min(height - 1, sourceY))
+  const x0 = Math.floor(x)
+  const y0 = Math.floor(y)
+  const x1 = Math.min(width - 1, x0 + 1)
+  const y1 = Math.min(height - 1, y0 + 1)
+  const fx = x - x0
+  const fy = y - y0
+  const topWeight = 1 - fy
+  const leftWeight = 1 - fx
+  const offset00 = (y0 * width + x0) * 4
+  const offset10 = (y0 * width + x1) * 4
+  const offset01 = (y1 * width + x0) * 4
+  const offset11 = (y1 * width + x1) * 4
+  for (let channel = 0; channel < 3; channel += 1) {
+    const top = imageData[offset00 + channel] * leftWeight + imageData[offset10 + channel] * fx
+    const bottom = imageData[offset01 + channel] * leftWeight + imageData[offset11 + channel] * fx
+    output[targetOffset + channel] = Math.round(top * topWeight + bottom * fy)
+  }
+  output[targetOffset + 3] = 255
+}
+
+function perspectiveSourcePoint(matrix, x, y) {
+  const divisor = matrix[6] * x + matrix[7] * y + matrix[8]
+  return {
+    x:(matrix[0] * x + matrix[1] * y + matrix[2]) / divisor,
+    y:(matrix[3] * x + matrix[4] * y + matrix[5]) / divisor
+  }
+}
+
 export function warpPerspectivePixels(imageData, width, height, quad, maxSize = 960) {
   const naturalWidth = Math.max(pointDistance(quad.topLeft, quad.topRight), pointDistance(quad.bottomLeft, quad.bottomRight))
   const naturalHeight = Math.max(pointDistance(quad.topLeft, quad.bottomLeft), pointDistance(quad.topRight, quad.bottomRight))
@@ -411,23 +516,13 @@ export function warpPerspectivePixels(imageData, width, height, quad, maxSize = 
   const outputWidth = Math.max(1, Math.round(naturalWidth * scale))
   const outputHeight = Math.max(1, Math.round(naturalHeight * scale))
   const output = new Uint8ClampedArray(outputWidth * outputHeight * 4)
+  const perspective = createPerspectiveMap(quad, outputWidth, outputHeight)
 
   for (let y = 0; y < outputHeight; y += 1) {
-    const v = outputHeight <= 1 ? 0 : y / (outputHeight - 1)
-    const leftX = quad.topLeft.x + (quad.bottomLeft.x - quad.topLeft.x) * v
-    const leftY = quad.topLeft.y + (quad.bottomLeft.y - quad.topLeft.y) * v
-    const rightX = quad.topRight.x + (quad.bottomRight.x - quad.topRight.x) * v
-    const rightY = quad.topRight.y + (quad.bottomRight.y - quad.topRight.y) * v
     for (let x = 0; x < outputWidth; x += 1) {
-      const u = outputWidth <= 1 ? 0 : x / (outputWidth - 1)
-      const sourceX = Math.max(0, Math.min(width - 1, Math.round(leftX + (rightX - leftX) * u)))
-      const sourceY = Math.max(0, Math.min(height - 1, Math.round(leftY + (rightY - leftY) * u)))
-      const sourceOffset = (sourceY * width + sourceX) * 4
       const targetOffset = (y * outputWidth + x) * 4
-      output[targetOffset] = imageData[sourceOffset]
-      output[targetOffset + 1] = imageData[sourceOffset + 1]
-      output[targetOffset + 2] = imageData[sourceOffset + 2]
-      output[targetOffset + 3] = 255
+      const source = perspectiveSourcePoint(perspective, x, y)
+      sampleBilinear(imageData, width, height, source.x, source.y, output, targetOffset)
     }
   }
   return { data: output, width: outputWidth, height: outputHeight }
@@ -440,27 +535,17 @@ export async function warpPerspectivePixelsAsync(imageData, width, height, quad,
   const outputWidth = Math.max(1, Math.round(naturalWidth * scale))
   const outputHeight = Math.max(1, Math.round(naturalHeight * scale))
   const output = new Uint8ClampedArray(outputWidth * outputHeight * 4)
+  const perspective = createPerspectiveMap(quad, outputWidth, outputHeight)
   const rowsPerChunk = Math.max(8, options.rowsPerChunk || 48)
   const yieldTask = options.yieldTask || (() => new Promise((resolve) => setTimeout(resolve, 0)))
 
   for (let chunkStart = 0; chunkStart < outputHeight; chunkStart += rowsPerChunk) {
     const chunkEnd = Math.min(outputHeight, chunkStart + rowsPerChunk)
     for (let y = chunkStart; y < chunkEnd; y += 1) {
-      const v = outputHeight <= 1 ? 0 : y / (outputHeight - 1)
-      const leftX = quad.topLeft.x + (quad.bottomLeft.x - quad.topLeft.x) * v
-      const leftY = quad.topLeft.y + (quad.bottomLeft.y - quad.topLeft.y) * v
-      const rightX = quad.topRight.x + (quad.bottomRight.x - quad.topRight.x) * v
-      const rightY = quad.topRight.y + (quad.bottomRight.y - quad.topRight.y) * v
       for (let x = 0; x < outputWidth; x += 1) {
-        const u = outputWidth <= 1 ? 0 : x / (outputWidth - 1)
-        const sourceX = Math.max(0, Math.min(width - 1, Math.round(leftX + (rightX - leftX) * u)))
-        const sourceY = Math.max(0, Math.min(height - 1, Math.round(leftY + (rightY - leftY) * u)))
-        const sourceOffset = (sourceY * width + sourceX) * 4
         const targetOffset = (y * outputWidth + x) * 4
-        output[targetOffset] = imageData[sourceOffset]
-        output[targetOffset + 1] = imageData[sourceOffset + 1]
-        output[targetOffset + 2] = imageData[sourceOffset + 2]
-        output[targetOffset + 3] = 255
+        const source = perspectiveSourcePoint(perspective, x, y)
+        sampleBilinear(imageData, width, height, source.x, source.y, output, targetOffset)
       }
     }
     if (chunkEnd < outputHeight) await yieldTask()
@@ -727,6 +812,7 @@ async function scanDocumentImageInBrowser(file, options = {}) {
     element.src = file.path
   })
   const maxDimension = options.maxDimension || 960
+  const preserveResolution = options.preserveResolution === true
   const scale = Math.min(1, maxDimension / Math.max(image.naturalWidth, image.naturalHeight))
   const width = Math.max(1, Math.round(image.naturalWidth * scale))
   const height = Math.max(1, Math.round(image.naturalHeight * scale))
@@ -746,9 +832,26 @@ async function scanDocumentImageInBrowser(file, options = {}) {
   const paperQuad = detectPaperQuad(source.data, width, height)
   const quad = stabilizeDocumentQuad(paperQuad.confidence ? paperQuad : detectDocumentQuad(source.data, width, height, bounds), width, height)
   reportProgress(options, 46, '识别边沿')
+  let warpData = source.data
+  let warpWidth = width
+  let warpHeight = height
+  let warpQuad = quad
+  if (preserveResolution && scale < 1) {
+    const sourceCanvas = document.createElement('canvas')
+    sourceCanvas.width = image.naturalWidth
+    sourceCanvas.height = image.naturalHeight
+    const sourceContext = sourceCanvas.getContext('2d', { willReadFrequently:true })
+    sourceContext.drawImage(image, 0, 0, image.naturalWidth, image.naturalHeight)
+    const fullSource = sourceContext.getImageData(0, 0, image.naturalWidth, image.naturalHeight)
+    warpData = fullSource.data
+    warpWidth = image.naturalWidth
+    warpHeight = image.naturalHeight
+    warpQuad = scaleDocumentQuad(quad, warpWidth / width, warpHeight / height)
+  }
+  const outputLimit = preserveResolution ? Number.POSITIVE_INFINITY : maxDimension
   const warped = options.yieldToUi
-    ? await warpPerspectivePixelsAsync(source.data, width, height, quad, maxDimension, options)
-    : warpPerspectivePixels(source.data, width, height, quad, maxDimension)
+    ? await warpPerspectivePixelsAsync(warpData, warpWidth, warpHeight, warpQuad, outputLimit, options)
+    : warpPerspectivePixels(warpData, warpWidth, warpHeight, warpQuad, outputLimit)
   reportProgress(options, 74, '透视裁切')
   const warpedSlots = detectSignatures ? detectSignatureLines(warped.data, warped.width, warped.height) : []
   const detectedSlots = options.preferSourceDetection && sourceSlots.length
@@ -760,7 +863,7 @@ async function scanDocumentImageInBrowser(file, options = {}) {
     width: useSourceSlots ? width : warped.width,
     height: useSourceSlots ? height : warped.height,
     scanBounds: bounds,
-    scanQuad: quad,
+    scanQuad: warpQuad,
     detectedSlots,
     kind: 'image',
     detectionSpace: useSourceSlots ? 'source' : 'warped'
@@ -772,7 +875,7 @@ async function scanDocumentImageInBrowser(file, options = {}) {
   outputCanvas.getContext('2d').putImageData(new ImageData(warped.data, warped.width, warped.height), 0, 0)
   reportProgress(options, 88, '保存结果')
   const blob = await new Promise((resolve, reject) => {
-    outputCanvas.toBlob((value) => value ? resolve(value) : reject(new Error('无法生成校正图片')), 'image/jpeg', options.quality || 0.9)
+    outputCanvas.toBlob((value) => value ? resolve(value) : reject(new Error('无法生成校正图片')), 'image/jpeg', options.quality || 0.98)
   })
   reportProgress(options, 100, '裁切完成')
   return {
@@ -796,18 +899,20 @@ export async function scanDocumentImage(file, options = {}) {
   reportProgress(options, 4, '读取照片')
   const info = await promisify((callbacks) => uniApi.getImageInfo({ src: file.path, ...callbacks }))
   const maxDimension = options.maxDimension || 960
+  const preserveResolution = options.preserveResolution === true
   const scale = Math.min(1, maxDimension / Math.max(info.width, info.height))
   const width = Math.max(1, Math.round(info.width * scale))
   const height = Math.max(1, Math.round(info.height * scale))
-  const ctx = uniApi.createCanvasContext(canvasId, component)
+  await options.resizeCanvas?.(width, height)
+  let ctx = uniApi.createCanvasContext(canvasId, component)
   ctx.drawImage(file.path, 0, 0, width, height)
   await new Promise((resolve) => ctx.draw(false, resolve))
   reportProgress(options, 18, '提取图像')
   const pixels = await promisify((callbacks) => uniApi.canvasGetImageData({ canvasId, x: 0, y: 0, width, height, ...callbacks }, component))
   const cropped = cropPixelBuffer(pixels.data, width, height, options.cropHint)
-  const sourceData = cropped.data
-  const sourceWidth = cropped.width
-  const sourceHeight = cropped.height
+  let sourceData = cropped.data
+  let sourceWidth = cropped.width
+  let sourceHeight = cropped.height
   const detectSignatures = options.detectSignatures !== false
   const sourceSlots = detectSignatures ? detectSignatureLines(sourceData, sourceWidth, sourceHeight) : []
   if (options.analysisOnly && options.preferSourceDetection && sourceSlots.length) {
@@ -815,19 +920,48 @@ export async function scanDocumentImage(file, options = {}) {
   }
   const bounds = detectDocumentBounds(sourceData, sourceWidth, sourceHeight)
   const paperQuad = detectPaperQuad(sourceData, sourceWidth, sourceHeight)
-  const quad = stabilizeDocumentQuad(paperQuad.confidence ? paperQuad : detectDocumentQuad(sourceData, sourceWidth, sourceHeight, bounds), sourceWidth, sourceHeight)
+  let quad = stabilizeDocumentQuad(paperQuad.confidence ? paperQuad : detectDocumentQuad(sourceData, sourceWidth, sourceHeight, bounds), sourceWidth, sourceHeight)
   reportProgress(options, 46, '识别边沿')
+  let outputCrop = cropped.crop
+  if (preserveResolution && scale < 1) {
+    const fullCrop = {
+      x:Math.max(0, Math.round(cropped.crop.x / width * info.width)),
+      y:Math.max(0, Math.round(cropped.crop.y / height * info.height)),
+      width:Math.max(1, Math.round(cropped.crop.width / width * info.width)),
+      height:Math.max(1, Math.round(cropped.crop.height / height * info.height))
+    }
+    fullCrop.width = Math.min(info.width - fullCrop.x, fullCrop.width)
+    fullCrop.height = Math.min(info.height - fullCrop.y, fullCrop.height)
+    await options.resizeCanvas?.(fullCrop.width, fullCrop.height)
+    ctx = uniApi.createCanvasContext(canvasId, component)
+    ctx.drawImage(
+      file.path,
+      fullCrop.x, fullCrop.y, fullCrop.width, fullCrop.height,
+      0, 0, fullCrop.width, fullCrop.height
+    )
+    await new Promise((resolve) => ctx.draw(false, resolve))
+    const fullPixels = await promisify((callbacks) => uniApi.canvasGetImageData({
+      canvasId, x:0, y:0, width:fullCrop.width, height:fullCrop.height, ...callbacks
+    }, component))
+    quad = scaleDocumentQuad(quad, fullCrop.width / sourceWidth, fullCrop.height / sourceHeight)
+    sourceData = fullPixels.data
+    sourceWidth = fullCrop.width
+    sourceHeight = fullCrop.height
+    outputCrop = fullCrop
+  }
+  const outputLimit = preserveResolution ? Number.POSITIVE_INFINITY : maxDimension
   const warped = options.yieldToUi
-    ? await warpPerspectivePixelsAsync(sourceData, sourceWidth, sourceHeight, quad, maxDimension, options)
-    : warpPerspectivePixels(sourceData, sourceWidth, sourceHeight, quad, maxDimension)
+    ? await warpPerspectivePixelsAsync(sourceData, sourceWidth, sourceHeight, quad, outputLimit, options)
+    : warpPerspectivePixels(sourceData, sourceWidth, sourceHeight, quad, outputLimit)
   reportProgress(options, 74, '透视裁切')
   const warpedSlots = detectSignatures ? detectSignatureLines(warped.data, warped.width, warped.height) : []
   const detectedSlots = options.preferSourceDetection && sourceSlots.length
     ? sourceSlots
     : chooseDetectedSlots(warpedSlots, sourceSlots)
   const useSourceSlots = detectedSlots === sourceSlots && sourceSlots.length > 0
-  await ensureWriteCapacity(Math.ceil(warped.width * warped.height * 0.55), { uniApi })
+  await ensureWriteCapacity(Math.ceil(warped.width * warped.height * 0.9), { uniApi })
   reportProgress(options, 84, '保存结果')
+  await options.resizeCanvas?.(warped.width, warped.height)
   await promisify((callbacks) => uniApi.canvasPutImageData({ canvasId, x: 0, y: 0, width: warped.width, height: warped.height, data: warped.data, ...callbacks }, component))
   const output = await promisify((callbacks) => uniApi.canvasToTempFilePath({
     canvasId,
@@ -838,11 +972,11 @@ export async function scanDocumentImage(file, options = {}) {
     destWidth: warped.width,
     destHeight: warped.height,
     fileType: 'jpg',
-    quality: options.quality || 0.9,
+    quality: options.quality || 0.98,
     ...callbacks
   }, component))
   reportProgress(options, 100, '裁切完成')
-  return { ...file, path: output.tempFilePath, name: file.name.replace(/\.[^.]+$/, '') + '-扫描.jpg', width: useSourceSlots ? sourceWidth : warped.width, height: useSourceSlots ? sourceHeight : warped.height, scanBounds: bounds, scanQuad: quad, scanCrop: cropped.crop, detectedSlots, detectionSpace: useSourceSlots ? 'source' : 'warped', kind: 'image', extension: 'jpg' }
+  return { ...file, path: output.tempFilePath, name: file.name.replace(/\.[^.]+$/, '') + '-扫描.jpg', width: useSourceSlots ? sourceWidth : warped.width, height: useSourceSlots ? sourceHeight : warped.height, scanBounds: bounds, scanQuad: quad, scanCrop: outputCrop, detectedSlots, detectionSpace: useSourceSlots ? 'source' : 'warped', kind: 'image', extension: 'jpg' }
 }
 
 export async function analyzeDocumentImage(file, options = {}) {

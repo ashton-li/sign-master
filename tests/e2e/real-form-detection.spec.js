@@ -7,7 +7,7 @@ test('crops a folded paper sheet away from a reflective laptop and keyboard', as
   const decoded = await decodeFixture(page, path.resolve('tests/fixtures/folded-paper-on-laptop.jpg'))
   const quad = stabilizeDocumentQuad(detectPaperQuad(decoded.data, decoded.width, decoded.height), decoded.width, decoded.height)
 
-  expect(quad.method).toBe('paper-contrast')
+  expect(quad.method).toBe('paper-canny')
   expect(quad.confidence).toBeGreaterThan(0.8)
   expect(quad.topLeft.x).toBeGreaterThan(decoded.width * 0.2)
   expect(quad.topLeft.x).toBeLessThan(decoded.width * 0.35)
@@ -19,6 +19,68 @@ test('crops a folded paper sheet away from a reflective laptop and keyboard', as
   const cropped = warpPerspectivePixels(decoded.data, decoded.width, decoded.height, quad)
   expect(cropped.width).toBeGreaterThan(decoded.width * 0.55)
   expect(cropped.height).toBeGreaterThan(decoded.height * 0.5)
+})
+
+test('detects a photographed printed letter and preserves source resolution for perspective output', async ({ page }) => {
+  const fixturePath = path.resolve('tests/fixtures/printed-letter-on-keyboard.jpg')
+  const preview = await decodeFixture(page, fixturePath)
+  const full = await decodeFixture(page, fixturePath, 0)
+  const previewQuad = stabilizeDocumentQuad(detectPaperQuad(preview.data, preview.width, preview.height), preview.width, preview.height)
+
+  expect(previewQuad.method).toBe('paper-canny')
+  expect(previewQuad.confidence).toBeGreaterThan(0.85)
+  expect(previewQuad.topLeft.x).toBeGreaterThan(preview.width * 0.1)
+  expect(previewQuad.topLeft.x).toBeLessThan(preview.width * 0.18)
+  expect(previewQuad.topRight.x).toBeGreaterThan(preview.width * 0.72)
+  expect(previewQuad.bottomLeft.x).toBeLessThan(preview.width * 0.08)
+  expect(previewQuad.bottomRight.x).toBeGreaterThan(preview.width * 0.9)
+
+  const scaleX = full.width / preview.width
+  const scaleY = full.height / preview.height
+  const scalePoint = (point) => ({ x:point.x * scaleX, y:point.y * scaleY })
+  const fullQuad = {
+    topLeft:scalePoint(previewQuad.topLeft),
+    topRight:scalePoint(previewQuad.topRight),
+    bottomRight:scalePoint(previewQuad.bottomRight),
+    bottomLeft:scalePoint(previewQuad.bottomLeft)
+  }
+  const previewCrop = warpPerspectivePixels(preview.data, preview.width, preview.height, previewQuad, Number.POSITIVE_INFINITY)
+  const cropped = warpPerspectivePixels(full.data, full.width, full.height, fullQuad, Number.POSITIVE_INFINITY)
+  expect(cropped.width).toBeGreaterThan(previewCrop.width * 1.7)
+  expect(cropped.height).toBeGreaterThan(previewCrop.height * 1.7)
+  expect(cropped.width).toBeGreaterThan(1000)
+})
+
+test('keeps photographed-paper detection above 90% across lighting and sensor-noise changes', async ({ page }) => {
+  const decoded = await decodeFixture(page, path.resolve('tests/fixtures/printed-letter-on-keyboard.jpg'))
+  const baseline = stabilizeDocumentQuad(detectPaperQuad(decoded.data, decoded.width, decoded.height), decoded.width, decoded.height)
+  let seed = 20260719
+  const random = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296)
+  let successes = 0
+  const startedAt = Date.now()
+
+  for (let sample = 0; sample < 20; sample += 1) {
+    const brightness = Math.round((random() - 0.5) * 28)
+    const contrast = 0.9 + random() * 0.2
+    const noise = 3 + random() * 8
+    const data = new Uint8ClampedArray(decoded.data.length)
+    for (let offset = 0; offset < data.length; offset += 4) {
+      for (let channel = 0; channel < 3; channel += 1) {
+        data[offset + channel] = Math.max(0, Math.min(255, (decoded.data[offset + channel] - 128) * contrast + 128 + brightness + (random() - 0.5) * noise))
+      }
+      data[offset + 3] = 255
+    }
+    const detected = stabilizeDocumentQuad(detectPaperQuad(data, decoded.width, decoded.height), decoded.width, decoded.height)
+    const points = ['topLeft', 'topRight', 'bottomRight', 'bottomLeft']
+    const meanError = points.reduce((total, key) => total + Math.hypot(
+      detected[key].x - baseline[key].x,
+      detected[key].y - baseline[key].y
+    ), 0) / points.length / Math.hypot(decoded.width, decoded.height)
+    if (detected.method === 'paper-canny' && detected.confidence > 0.75 && meanError < 0.035) successes += 1
+  }
+
+  expect(successes / 20).toBeGreaterThanOrEqual(0.9)
+  expect((Date.now() - startedAt) / 20).toBeLessThan(3000)
 })
 
 test('detects the three labeled underline slots in the real return form', async ({ page }) => {
@@ -112,13 +174,13 @@ test('clears the reading state when the WeChat file picker is cancelled', async 
   await expect(page.getByText('导入失败', { exact:true })).toHaveCount(0)
 })
 
-async function decodeFixture(page, fixturePath) {
+async function decodeFixture(page, fixturePath, maxDimension = 960) {
   const source = `data:image/jpeg;base64,${fs.readFileSync(fixturePath).toString('base64')}`
-  const result = await page.evaluate(async (src) => {
+  const result = await page.evaluate(async ({ src, maxDimension }) => {
     const image = new Image()
     image.src = src
     await image.decode()
-    const scale = Math.min(1, 960 / Math.max(image.naturalWidth, image.naturalHeight))
+    const scale = maxDimension > 0 ? Math.min(1, maxDimension / Math.max(image.naturalWidth, image.naturalHeight)) : 1
     const width = Math.round(image.naturalWidth * scale)
     const height = Math.round(image.naturalHeight * scale)
     const canvas = document.createElement('canvas')
@@ -132,6 +194,6 @@ async function decodeFixture(page, fixturePath) {
       binary += String.fromCharCode(...bytes.subarray(offset, offset + 32768))
     }
     return { width, height, base64: btoa(binary) }
-  }, source)
+  }, { src:source, maxDimension })
   return { width: result.width, height: result.height, data: new Uint8ClampedArray(Buffer.from(result.base64, 'base64')) }
 }

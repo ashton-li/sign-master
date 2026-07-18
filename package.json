@@ -23,6 +23,7 @@
   "dependencies": {
     "crypto-js": "^4.2.0",
     "fflate": "^0.8.2",
+    "jsfeat": "^0.0.8",
     "pdf-lib": "^1.17.1",
     "pinia": "2.1.7",
     "vue": "3.4.21"

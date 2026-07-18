@@ -66,7 +66,13 @@
       </view>
     </view>
 
-    <canvas id="scanProcessCanvas" canvas-id="scanProcessCanvas" class="process-canvas" width="900" height="900" />
+    <canvas
+      id="scanProcessCanvas"
+      canvas-id="scanProcessCanvas"
+      class="process-canvas"
+      :width="processCanvasSize.width"
+      :height="processCanvasSize.height"
+    />
   </view>
 </template>
 
@@ -87,6 +93,7 @@ const captureBusy = ref(false)
 const finishBusy = ref(false)
 const cameraError = ref('')
 const scannedPages = ref([])
+const processCanvasSize = ref({ width:900, height:900 })
 const draggingIndex = ref(-1)
 const dragTarget = ref(-1)
 let dragStartY = 0
@@ -96,6 +103,14 @@ let cancelled = false
 let scanCompleted = false
 let cropQueue = Promise.resolve()
 const scanSources = new Map()
+
+async function resizeProcessCanvas(width, height) {
+  const nextSize = { width:Math.max(1, Math.ceil(width)), height:Math.max(1, Math.ceil(height)) }
+  if (processCanvasSize.value.width === nextSize.width && processCanvasSize.value.height === nextSize.height) return
+  processCanvasSize.value = nextSize
+  await nextTick()
+  await new Promise((resolve) => setTimeout(resolve, 16))
+}
 
 function ascii(value) {
   const output = new Uint8Array(value.length)
@@ -318,7 +333,9 @@ function queueCrop(pageId, source) {
         canvasId:'scanProcessCanvas',
         component:instance?.proxy,
         maxDimension:900,
-        quality:0.9,
+        quality:0.98,
+        preserveResolution:true,
+        resizeCanvas:resizeProcessCanvas,
         detectSignatures:false,
         yieldToUi:true,
         rowsPerChunk:36,
@@ -460,4 +477,5 @@ function handleCameraError(error) {
 /* #ifdef H5 */
 .scan-page{height:calc(100vh - 44px);min-height:0}
 /* #endif */
+.process-canvas{left:-4px;top:-4px;width:1px;height:1px;opacity:0;pointer-events:none}
 </style>

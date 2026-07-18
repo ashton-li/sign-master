@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { PNG } from 'pngjs'
-import { analyzeDocumentImage, detectDocumentBounds, detectPaperQuad, detectSignatureLines, stabilizeDocumentQuad, warpPerspectivePixels, warpPerspectivePixelsAsync } from '../../src/core/vision/documentScanner'
+import { analyzeDocumentImage, detectDocumentBounds, detectPaperQuad, detectSignatureLines, scanDocumentImage, stabilizeDocumentQuad, warpPerspectivePixels, warpPerspectivePixelsAsync } from '../../src/core/vision/documentScanner'
 
 function image(width, height, color = 230) {
   const data = new Uint8ClampedArray(width * height * 4)
@@ -247,5 +247,50 @@ describe('document scanner', () => {
     expect(result.width).toBe(expected.width)
     expect(result.height).toBe(expected.height)
     expect(result.data).toEqual(expected.data)
+  })
+
+  it('uses the preview only for detection and exports the perspective crop at source resolution', async () => {
+    const sourceWidth = 160
+    const sourceHeight = 220
+    const previewWidth = 73
+    const previewHeight = 100
+    const resizeCalls = []
+    const exportOptions = []
+    let readCount = 0
+    const context = { drawImage() {}, draw(_reserve, callback) { callback() } }
+    const uniApi = {
+      getImageInfo({ success }) { success({ width:sourceWidth, height:sourceHeight }) },
+      createCanvasContext() { return context },
+      canvasGetImageData({ success }) {
+        readCount += 1
+        success({ data:readCount === 1 ? image(previewWidth, previewHeight, 245) : image(sourceWidth, sourceHeight, 245) })
+      },
+      canvasPutImageData({ success }) { success() },
+      canvasToTempFilePath(options) {
+        exportOptions.push(options)
+        options.success({ tempFilePath:'/full-resolution-scan.jpg' })
+      },
+      getStorageInfoSync() { return { currentSize:0, limitSize:10240 } }
+    }
+
+    const result = await scanDocumentImage({ name:'letter.jpg', path:'/letter.jpg', kind:'image' }, {
+      uniApi,
+      maxDimension:100,
+      preserveResolution:true,
+      detectSignatures:false,
+      resizeCanvas:async (width, height) => resizeCalls.push({ width, height })
+    })
+
+    expect(readCount).toBe(2)
+    expect(result.path).toBe('/full-resolution-scan.jpg')
+    expect(result.width).toBeGreaterThan(150)
+    expect(result.height).toBeGreaterThan(210)
+    expect(exportOptions[0].destWidth).toBe(result.width)
+    expect(exportOptions[0].destHeight).toBe(result.height)
+    expect(resizeCalls).toEqual([
+      { width:previewWidth, height:previewHeight },
+      { width:sourceWidth, height:sourceHeight },
+      { width:result.width, height:result.height }
+    ])
   })
 })
