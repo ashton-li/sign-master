@@ -18,6 +18,7 @@
 - 单元测试：24 个文件，101/101 通过。
 - H5 E2E：22/22 通过，包含实拍折叠纸裁切、三签字位、取消选取、完整签署、扫描、模板、备份、容量与分享入口。
 - 生产依赖审计：0 个高危漏洞。
+- GitHub Actions 已升级到当前稳定主版本：checkout/setup-node/upload-artifact v7、CodeQL Action v4，消除旧 Node 运行时和 CodeQL v3 弃用风险。
 - H5 构建与微信生产构建通过；`VITE_MP_WEIXIN_APPID` 仅在构建阶段临时注入，源文件已恢复占位值。
 - 微信产物烟测通过：18 个页面、4 个 Tab、签字选择器及加密压缩备份均加载正常。
 - 生产包位置：`dist/build/mp-weixin`。
