@@ -20,6 +20,123 @@ function emptyPaperQuad(width, height) {
   }
 }
 
+function intersectDocumentLines(horizontal, vertical) {
+  const denominator = 1 - vertical.slope * horizontal.slope
+  if (Math.abs(denominator) < 0.08) return null
+  const x = (vertical.slope * horizontal.intercept + vertical.intercept) / denominator
+  return { x, y:horizontal.slope * x + horizontal.intercept }
+}
+
+function polygonArea(points) {
+  let area = 0
+  for (let index = 0; index < points.length; index += 1) {
+    const current = points[index]
+    const next = points[(index + 1) % points.length]
+    area += current.x * next.y - next.x * current.y
+  }
+  return Math.abs(area) / 2
+}
+
+function detectContrastPaperQuad(luma, gridWidth, gridHeight, sampleStep, width, height) {
+  // Fit directional contrast lines instead of relying on one bright region;
+  // this separates paper from reflective surfaces connected to its boundary.
+  const findLine = (mode) => {
+    const horizontal = mode === 'top' || mode === 'bottom'
+    const primarySize = horizontal ? gridWidth : gridHeight
+    const secondarySize = horizontal ? gridHeight : gridWidth
+    let best = null
+    for (let slopeIndex = -14; slopeIndex <= 14; slopeIndex += 1) {
+      const slope = slopeIndex * 0.04
+      for (let intercept = 4; intercept < secondarySize - 4; intercept += 1) {
+        if (mode === 'top' && intercept > gridHeight * 0.62) continue
+        if (mode === 'bottom' && intercept < gridHeight * 0.35) continue
+        if (mode === 'left' && intercept > gridWidth * 0.62) continue
+        if (mode === 'right' && intercept < gridWidth * 0.35) continue
+        let segmentStart = -1
+        let lastGood = -1
+        let segmentScore = 0
+        const commitSegment = () => {
+          if (segmentStart < 0 || lastGood - segmentStart < primarySize * 0.22) return
+          const length = lastGood - segmentStart + 1
+          const weightedScore = segmentScore * Math.pow(length / primarySize, 0.55)
+          if (!best || weightedScore > best.score) {
+            best = { slope, intercept, start:segmentStart, end:lastGood, score:weightedScore, rawScore:segmentScore }
+          }
+        }
+        for (let primary = 3; primary < primarySize - 3; primary += 1) {
+          const secondary = Math.round(slope * primary + intercept)
+          let contrast = -255
+          if (secondary >= 4 && secondary < secondarySize - 4) {
+            if (horizontal) {
+              const before = luma[(secondary - 3) * gridWidth + primary]
+              const after = luma[(secondary + 3) * gridWidth + primary]
+              contrast = mode === 'top' ? after - before : before - after
+            } else {
+              const before = luma[primary * gridWidth + secondary - 3]
+              const after = luma[primary * gridWidth + secondary + 3]
+              contrast = mode === 'left' ? after - before : before - after
+            }
+          }
+          if (contrast >= 15) {
+            if (segmentStart < 0) {
+              segmentStart = primary
+              segmentScore = 0
+            }
+            lastGood = primary
+            segmentScore += Math.min(120, contrast)
+          } else if (segmentStart >= 0 && primary - lastGood <= 3) {
+            segmentScore += Math.max(0, contrast) * 0.2
+          } else if (segmentStart >= 0) {
+            commitSegment()
+            segmentStart = -1
+            lastGood = -1
+            segmentScore = 0
+          }
+        }
+        commitSegment()
+      }
+    }
+    return best
+  }
+
+  const top = findLine('top')
+  const bottom = findLine('bottom')
+  const left = findLine('left')
+  const right = findLine('right')
+  if (!top || !bottom || !left || !right) return null
+  const gridPoints = [
+    intersectDocumentLines(top, left), intersectDocumentLines(top, right),
+    intersectDocumentLines(bottom, right), intersectDocumentLines(bottom, left)
+  ]
+  if (gridPoints.some((point) => !point)) return null
+  const [topLeft, topRight, bottomRight, bottomLeft] = gridPoints
+  const marginX = gridWidth * 0.04
+  const marginY = gridHeight * 0.04
+  if (gridPoints.some((point) => point.x < -marginX || point.x > gridWidth - 1 + marginX || point.y < -marginY || point.y > gridHeight - 1 + marginY)) return null
+  const topWidth = Math.hypot(topRight.x - topLeft.x, topRight.y - topLeft.y)
+  const bottomWidth = Math.hypot(bottomRight.x - bottomLeft.x, bottomRight.y - bottomLeft.y)
+  const leftHeight = Math.hypot(bottomLeft.x - topLeft.x, bottomLeft.y - topLeft.y)
+  const rightHeight = Math.hypot(bottomRight.x - topRight.x, bottomRight.y - topRight.y)
+  const areaRatio = polygonArea(gridPoints) / (gridWidth * gridHeight)
+  const centerTop = top.slope * (gridWidth / 2) + top.intercept
+  const centerBottom = bottom.slope * (gridWidth / 2) + bottom.intercept
+  const centerLeft = left.slope * (gridHeight / 2) + left.intercept
+  const centerRight = right.slope * (gridHeight / 2) + right.intercept
+  if (centerTop >= centerBottom || centerLeft >= centerRight || areaRatio < 0.12 || areaRatio > 0.88
+    || Math.min(topWidth, bottomWidth) < gridWidth * 0.28 || Math.min(leftHeight, rightHeight) < gridHeight * 0.28) return null
+  const scoreFloor = Math.min(top.score / gridWidth, bottom.score / gridWidth, left.score / gridHeight, right.score / gridHeight)
+  const confidence = Math.min(0.97, 0.56 + Math.min(0.29, scoreFloor / 85) + Math.min(0.1, areaRatio * 0.2))
+  const toSource = (point) => ({
+    x:Math.max(0, Math.min(width - 1, Math.round(point.x * sampleStep))),
+    y:Math.max(0, Math.min(height - 1, Math.round(point.y * sampleStep)))
+  })
+  return {
+    topLeft:toSource(topLeft), topRight:toSource(topRight),
+    bottomRight:toSource(bottomRight), bottomLeft:toSource(bottomLeft),
+    confidence, method:'paper-contrast'
+  }
+}
+
 export function detectPaperQuad(imageData, width, height) {
   if (!imageData?.length || width < 24 || height < 24) return emptyPaperQuad(width, height)
   const sampleStep = Math.max(1, Math.ceil(Math.max(width, height) / 180))
@@ -45,10 +162,28 @@ export function detectPaperQuad(imageData, width, height) {
   }
 
   const background = median(border)
+  const contrastQuad = detectContrastPaperQuad(luma, gridWidth, gridHeight, sampleStep, width, height)
   const threshold = Math.max(132, Math.min(238, background + 18))
   const mask = new Uint8Array(gridWidth * gridHeight)
   for (let index = 0; index < mask.length; index += 1) {
     mask[index] = luma[index] >= threshold && chroma[index] <= 78 ? 1 : 0
+  }
+
+  // Paper texture, shadows and fold lines can split one sheet into several
+  // components. Close only short gaps so the outer boundary stays intact.
+  for (let pass = 0; pass < 2; pass += 1) {
+    const previous = mask.slice()
+    for (let y = 1; y < gridHeight - 1; y += 1) {
+      for (let x = 1; x < gridWidth - 1; x += 1) {
+        const index = y * gridWidth + x
+        if (previous[index]) continue
+        const horizontal = previous[index - 1] && previous[index + 1]
+        const vertical = previous[index - gridWidth] && previous[index + gridWidth]
+        const diagonal = (previous[index - gridWidth - 1] && previous[index + gridWidth + 1])
+          || (previous[index - gridWidth + 1] && previous[index + gridWidth - 1])
+        if (horizontal || vertical || diagonal) mask[index] = 1
+      }
+    }
   }
 
   const labels = new Int32Array(mask.length)
@@ -74,7 +209,11 @@ export function detectPaperQuad(imageData, width, height) {
       count += 1
       minX = Math.min(minX, x); maxX = Math.max(maxX, x)
       minY = Math.min(minY, y); maxY = Math.max(maxY, y)
-      const neighbors = [current - 1, current + 1, current - gridWidth, current + gridWidth]
+      const neighbors = [
+        current - 1, current + 1, current - gridWidth, current + gridWidth,
+        current - gridWidth - 1, current - gridWidth + 1,
+        current + gridWidth - 1, current + gridWidth + 1
+      ]
       for (const next of neighbors) {
         if (next < 0 || next >= mask.length || !mask[next] || labels[next] !== -1) continue
         const nextX = next % gridWidth
@@ -99,7 +238,7 @@ export function detectPaperQuad(imageData, width, height) {
     })
     .filter((item) => item.areaRatio >= 0.07 && item.boxRatio >= 0.12 && item.boxRatio <= 0.96 && item.fill >= 0.38)
     .sort((a, b) => b.score - a.score)[0]
-  if (!component) return emptyPaperQuad(width, height)
+  if (!component) return contrastQuad || emptyPaperQuad(width, height)
 
   const rowLeft = new Array(gridHeight).fill(Infinity)
   const rowRight = new Array(gridHeight).fill(-Infinity)
@@ -120,24 +259,22 @@ export function detectPaperQuad(imageData, width, height) {
   const values = (items, from, to) => items.slice(Math.max(0, from), Math.min(items.length, to)).filter(valid)
   const toSourceX = (value) => Math.max(0, Math.min(width - 1, Math.round(value * sampleStep)))
   const toSourceY = (value) => Math.max(0, Math.min(height - 1, Math.round(value * sampleStep)))
-  const topLeft = {
-    x:toSourceX(median(values(rowLeft, component.minY, component.minY + yBand))),
-    y:toSourceY(median(values(columnTop, component.minX, component.minX + xBand)))
+  const topLeftX = median(values(rowLeft, component.minY, component.minY + yBand))
+  const topRightX = median(values(rowRight, component.minY, component.minY + yBand))
+  const bottomLeftX = median(values(rowLeft, component.maxY - yBand + 1, component.maxY + 1))
+  const bottomRightX = median(values(rowRight, component.maxY - yBand + 1, component.maxY + 1))
+  const edgeY = (items, centerX) => {
+    const radius = Math.max(2, Math.round(xBand * 0.42))
+    const samples = values(items, Math.round(centerX) - radius, Math.round(centerX) + radius + 1)
+    return samples.length ? median(samples) : (items === columnTop ? component.minY : component.maxY)
   }
-  const topRight = {
-    x:toSourceX(median(values(rowRight, component.minY, component.minY + yBand))),
-    y:toSourceY(median(values(columnTop, component.maxX - xBand + 1, component.maxX + 1)))
-  }
-  const bottomLeft = {
-    x:toSourceX(median(values(rowLeft, component.maxY - yBand + 1, component.maxY + 1))),
-    y:toSourceY(median(values(columnBottom, component.minX, component.minX + xBand)))
-  }
-  const bottomRight = {
-    x:toSourceX(median(values(rowRight, component.maxY - yBand + 1, component.maxY + 1))),
-    y:toSourceY(median(values(columnBottom, component.maxX - xBand + 1, component.maxX + 1)))
-  }
+  const topLeft = { x:toSourceX(topLeftX), y:toSourceY(edgeY(columnTop, topLeftX)) }
+  const topRight = { x:toSourceX(topRightX), y:toSourceY(edgeY(columnTop, topRightX)) }
+  const bottomLeft = { x:toSourceX(bottomLeftX), y:toSourceY(edgeY(columnBottom, bottomLeftX)) }
+  const bottomRight = { x:toSourceX(bottomRightX), y:toSourceY(edgeY(columnBottom, bottomRightX)) }
   const confidence = Math.min(0.98, 0.45 + component.fill * 0.3 + Math.min(0.2, component.areaRatio))
-  return { topLeft, topRight, bottomRight, bottomLeft, confidence, method:'paper-luma' }
+  const lumaQuad = { topLeft, topRight, bottomRight, bottomLeft, confidence, method:'paper-luma' }
+  return contrastQuad && (component.touches > 0 || contrastQuad.confidence > confidence + 0.08) ? contrastQuad : lumaQuad
 }
 
 function edgeScore(data, width, x, y) {
@@ -259,11 +396,11 @@ export function stabilizeDocumentQuad(quad, width, height) {
   const naturalHeight = Math.max(leftHeight, rightHeight)
   const estimatedArea = ((topWidth + bottomWidth) / 2) * ((leftHeight + rightHeight) / 2)
   const compactness = Math.min(naturalWidth, naturalHeight) / Math.max(naturalWidth, naturalHeight)
-  const paperLuma = quad.method === 'paper-luma'
-  const reliable = naturalWidth >= width * (paperLuma ? 0.34 : 0.52)
-    && naturalHeight >= height * (paperLuma ? 0.34 : 0.42)
-    && estimatedArea >= width * height * (paperLuma ? 0.12 : 0.3)
-    && compactness >= (paperLuma ? 0.28 : 0.34)
+  const paperDetection = quad.method?.startsWith('paper-')
+  const reliable = naturalWidth >= width * (paperDetection ? 0.34 : 0.52)
+    && naturalHeight >= height * (paperDetection ? 0.34 : 0.42)
+    && estimatedArea >= width * height * (paperDetection ? 0.12 : 0.3)
+    && compactness >= (paperDetection ? 0.28 : 0.34)
   return reliable ? quad : fullImageQuad(width, height)
 }
 

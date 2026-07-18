@@ -213,12 +213,7 @@ async function handleShare() {
   }
   const filePath = await generateExport({ present: false, record: true, message: '分享文件已生成' })
   if (!filePath) return
-  uni.showModal({
-    title: '文件已生成',
-    content: `已按 ${signingStore.exportFormat.toUpperCase()} 格式生成，点击发送给微信好友。`,
-    confirmText: '发送好友',
-    success: ({ confirm }) => { if (confirm) shareCurrentFile() }
-  })
+  shareCurrentFile()
   // #endif
   // #ifndef MP-WEIXIN
   setStatus('浏览器不支持微信文件直发，请在微信小程序中使用', true)

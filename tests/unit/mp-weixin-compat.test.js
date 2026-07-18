@@ -126,16 +126,18 @@ describe('mp-weixin compatibility guards', () => {
     expect(signPage).toContain('@touchend.stop="handleSlotActivate(slot)"')
     expect(signPage).toContain('@tap.stop="handleSlotActivate(slot)"')
     expect(previewPage).toContain("[{ value: 'jpg', label: 'JPEG'")
+    expect(previewPage).not.toContain("title: '文件已生成'")
+    expect(previewPage).toMatch(/generateExport\(\{ present: false[\s\S]*shareCurrentFile\(\)/)
   })
 
-  it('packages independent capacity/about pages and keeps mini-program detection experimental', () => {
+  it('packages independent capacity/about pages and keeps mini-program scanning lightweight', () => {
     const pages = JSON.parse(readText('src/pages.json'))
     const settingsPackage = pages.subPackages.find((item) => item.root === 'subpackages/settings')
     const signPage = readText('src/pages/sign/index.vue')
     const scanner = readText('src/pages/sign/scan.vue')
 
     expect(settingsPackage.pages.map((page) => page.path)).toEqual(expect.arrayContaining(['capacity', 'about']))
-    expect(signPage).toContain('签字位识别为实验性功能')
+    expect(signPage).not.toContain('签字位识别为实验性功能')
     expect(signPage).toMatch(/#ifdef MP-WEIXIN[\s\S]*startDefaultSignature\(file\)/)
     expect(scanner).toContain('@tap.stop="handleCapture"')
     expect(scanner).not.toContain('handleCameraFrame')

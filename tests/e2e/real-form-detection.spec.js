@@ -1,7 +1,25 @@
 import path from 'node:path'
 import fs from 'node:fs'
 import { expect, test } from '@playwright/test'
-import { detectDocumentQuad, detectSignatureLines, warpPerspectivePixels } from '../../src/core/vision/documentScanner.js'
+import { detectDocumentQuad, detectPaperQuad, detectSignatureLines, stabilizeDocumentQuad, warpPerspectivePixels } from '../../src/core/vision/documentScanner.js'
+
+test('crops a folded paper sheet away from a reflective laptop and keyboard', async ({ page }) => {
+  const decoded = await decodeFixture(page, path.resolve('tests/fixtures/folded-paper-on-laptop.jpg'))
+  const quad = stabilizeDocumentQuad(detectPaperQuad(decoded.data, decoded.width, decoded.height), decoded.width, decoded.height)
+
+  expect(quad.method).toBe('paper-contrast')
+  expect(quad.confidence).toBeGreaterThan(0.8)
+  expect(quad.topLeft.x).toBeGreaterThan(decoded.width * 0.2)
+  expect(quad.topLeft.x).toBeLessThan(decoded.width * 0.35)
+  expect(quad.topRight.x).toBeGreaterThan(decoded.width * 0.7)
+  expect(quad.bottomLeft.x).toBeLessThan(decoded.width * 0.2)
+  expect(quad.bottomLeft.y).toBeGreaterThan(decoded.height * 0.62)
+  expect(quad.bottomRight.y).toBeLessThan(decoded.height * 0.82)
+
+  const cropped = warpPerspectivePixels(decoded.data, decoded.width, decoded.height, quad)
+  expect(cropped.width).toBeGreaterThan(decoded.width * 0.55)
+  expect(cropped.height).toBeGreaterThan(decoded.height * 0.5)
+})
 
 test('detects the three labeled underline slots in the real return form', async ({ page }) => {
   const runtimeErrors = []
