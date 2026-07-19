@@ -21,6 +21,26 @@ test('crops a folded paper sheet away from a reflective laptop and keyboard', as
   expect(cropped.height).toBeGreaterThan(decoded.height * 0.5)
 })
 
+test('crops the full printed letter from a striped bamboo background', async ({ page }) => {
+  const decoded = await decodeFixture(page, path.resolve('tests/fixtures/printed-letter-on-bamboo-mat.jpg'))
+  const quad = stabilizeDocumentQuad(detectPaperQuad(decoded.data, decoded.width, decoded.height), decoded.width, decoded.height)
+  const topWidth = Math.hypot(quad.topRight.x - quad.topLeft.x, quad.topRight.y - quad.topLeft.y)
+  const bottomWidth = Math.hypot(quad.bottomRight.x - quad.bottomLeft.x, quad.bottomRight.y - quad.bottomLeft.y)
+
+  expect(quad.method).toBe('paper-canny')
+  expect(quad.confidence).toBeGreaterThan(0.85)
+  expect(Math.min(topWidth, bottomWidth) / Math.max(topWidth, bottomWidth)).toBeGreaterThan(0.7)
+  expect(quad.topLeft.x).toBeGreaterThan(decoded.width * 0.2)
+  expect(quad.bottomLeft.x).toBeLessThan(decoded.width * 0.2)
+  expect(quad.bottomRight.x).toBeGreaterThan(decoded.width * 0.7)
+
+  const cropped = warpPerspectivePixels(decoded.data, decoded.width, decoded.height, quad, Number.POSITIVE_INFINITY)
+  const sampledBrightness = cropped.data.reduce((sum, value, index) => index % 4 === 3 ? sum : sum + value, 0) / (cropped.width * cropped.height * 3)
+  expect(cropped.width).toBeGreaterThan(decoded.width * 0.55)
+  expect(cropped.height).toBeGreaterThan(decoded.height * 0.5)
+  expect(sampledBrightness).toBeGreaterThan(120)
+})
+
 test('detects a photographed printed letter and preserves source resolution for perspective output', async ({ page }) => {
   const fixturePath = path.resolve('tests/fixtures/printed-letter-on-keyboard.jpg')
   const preview = await decodeFixture(page, fixturePath)

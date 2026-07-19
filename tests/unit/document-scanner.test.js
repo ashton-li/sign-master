@@ -256,8 +256,9 @@ describe('document scanner', () => {
     const previewHeight = 100
     const resizeCalls = []
     const exportOptions = []
+    const drawCalls = []
     let readCount = 0
-    const context = { drawImage() {}, draw(_reserve, callback) { callback() } }
+    const context = { drawImage(...args) { drawCalls.push(args) }, draw(_reserve, callback) { callback() } }
     const uniApi = {
       getImageInfo({ success }) { success({ width:sourceWidth, height:sourceHeight }) },
       createCanvasContext() { return context },
@@ -281,7 +282,9 @@ describe('document scanner', () => {
       resizeCanvas:async (width, height) => resizeCalls.push({ width, height })
     })
 
-    expect(readCount).toBe(2)
+    expect(readCount).toBe(3)
+    expect(drawCalls).toHaveLength(2)
+    expect(drawCalls.every((args) => args.length === 5)).toBe(true)
     expect(result.path).toBe('/full-resolution-scan.jpg')
     expect(result.width).toBeGreaterThan(150)
     expect(result.height).toBeGreaterThan(210)
@@ -292,5 +295,33 @@ describe('document scanner', () => {
       { width:sourceWidth, height:sourceHeight },
       { width:result.width, height:result.height }
     ])
+  })
+
+  it('rejects an unreadable full-resolution canvas instead of exporting a black scan', async () => {
+    const previewWidth = 73
+    const previewHeight = 100
+    let readCount = 0
+    let exported = false
+    const context = { drawImage() {}, draw(_reserve, callback) { callback() } }
+    const uniApi = {
+      getImageInfo({ success }) { success({ width:160, height:220 }) },
+      createCanvasContext() { return context },
+      canvasGetImageData({ success }) {
+        readCount += 1
+        success({ data:readCount === 1 ? image(previewWidth, previewHeight, 245) : new Uint8ClampedArray(160 * 220 * 4) })
+      },
+      canvasPutImageData({ success }) { success() },
+      canvasToTempFilePath({ success }) { exported = true; success({ tempFilePath:'/black.jpg' }) },
+      getStorageInfoSync() { return { currentSize:0, limitSize:10240 } }
+    }
+
+    await expect(scanDocumentImage({ name:'letter.jpg', path:'/letter.jpg' }, {
+      uniApi,
+      maxDimension:100,
+      preserveResolution:true,
+      detectSignatures:false,
+      resizeCanvas:async () => {}
+    })).rejects.toThrow('读取原图失败')
+    expect(exported).toBe(false)
   })
 })

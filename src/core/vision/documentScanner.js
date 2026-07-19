@@ -325,7 +325,16 @@ export function detectPaperQuad(imageData, width, height) {
   const bottomRight = { x:toSourceX(bottomRightX), y:toSourceY(edgeY(columnBottom, bottomRightX)) }
   const confidence = Math.min(0.98, 0.45 + component.fill * 0.3 + Math.min(0.2, component.areaRatio))
   const lumaQuad = { topLeft, topRight, bottomRight, bottomLeft, confidence, method:'paper-luma' }
-  return contrastQuad && (component.touches > 0 || contrastQuad.confidence > confidence + 0.08) ? contrastQuad : lumaQuad
+  const topWidth = pointDistance(topLeft, topRight)
+  const bottomWidth = pointDistance(bottomLeft, bottomRight)
+  const leftHeight = pointDistance(topLeft, bottomLeft)
+  const rightHeight = pointDistance(topRight, bottomRight)
+  const widthConsistency = Math.min(topWidth, bottomWidth) / Math.max(1, topWidth, bottomWidth)
+  const heightConsistency = Math.min(leftHeight, rightHeight) / Math.max(1, leftHeight, rightHeight)
+  const lumaShapeReliable = widthConsistency >= 0.3 && heightConsistency >= 0.3
+  return contrastQuad && (!lumaShapeReliable || component.touches > 0 || contrastQuad.confidence > confidence + 0.08)
+    ? contrastQuad
+    : lumaQuad
 }
 
 function edgeScore(data, width, x, y) {
@@ -466,6 +475,49 @@ function scaleDocumentQuad(quad, scaleX, scaleY) {
   }
 }
 
+function mapDocumentQuadToOriginalCrop(quad, detectionCrop, detectionWidth, detectionHeight, originalWidth, originalHeight) {
+  const toOriginal = (point) => ({
+    x:(detectionCrop.x + point.x) / detectionWidth * originalWidth,
+    y:(detectionCrop.y + point.y) / detectionHeight * originalHeight
+  })
+  const mapped = {
+    ...quad,
+    topLeft:toOriginal(quad.topLeft),
+    topRight:toOriginal(quad.topRight),
+    bottomRight:toOriginal(quad.bottomRight),
+    bottomLeft:toOriginal(quad.bottomLeft)
+  }
+  const points = [mapped.topLeft, mapped.topRight, mapped.bottomRight, mapped.bottomLeft]
+  const padding = Math.max(2, Math.round(Math.max(originalWidth, originalHeight) * 0.004))
+  const left = Math.max(0, Math.floor(Math.min(...points.map((point) => point.x)) - padding))
+  const top = Math.max(0, Math.floor(Math.min(...points.map((point) => point.y)) - padding))
+  const right = Math.min(originalWidth, Math.ceil(Math.max(...points.map((point) => point.x)) + padding))
+  const bottom = Math.min(originalHeight, Math.ceil(Math.max(...points.map((point) => point.y)) + padding))
+  const crop = { x:left, y:top, width:Math.max(1, right - left), height:Math.max(1, bottom - top) }
+  const localize = (point) => ({ x:point.x - crop.x, y:point.y - crop.y })
+  return {
+    crop,
+    quad:{
+      ...mapped,
+      topLeft:localize(mapped.topLeft),
+      topRight:localize(mapped.topRight),
+      bottomRight:localize(mapped.bottomRight),
+      bottomLeft:localize(mapped.bottomLeft)
+    }
+  }
+}
+
+function hasReadablePixels(data) {
+  if (!data?.length) return false
+  const sampleCount = Math.min(96, Math.floor(data.length / 4))
+  const stride = Math.max(1, Math.floor(data.length / 4 / sampleCount))
+  for (let sample = 0; sample < sampleCount; sample += 1) {
+    const offset = Math.min(data.length - 4, sample * stride * 4)
+    if (data[offset + 3] > 0 && data[offset] + data[offset + 1] + data[offset + 2] > 12) return true
+  }
+  return false
+}
+
 function createPerspectiveMap(quad, outputWidth, outputHeight) {
   const matrix = new jsfeat.matrix_t(3, 3, jsfeat.F32_t | jsfeat.C1_t)
   jsfeat.math.perspective_4point_transform(
@@ -478,34 +530,39 @@ function createPerspectiveMap(quad, outputWidth, outputHeight) {
   return matrix.data
 }
 
-function sampleBilinear(imageData, width, height, sourceX, sourceY, output, targetOffset) {
-  const x = Math.max(0, Math.min(width - 1, sourceX))
-  const y = Math.max(0, Math.min(height - 1, sourceY))
-  const x0 = Math.floor(x)
-  const y0 = Math.floor(y)
-  const x1 = Math.min(width - 1, x0 + 1)
-  const y1 = Math.min(height - 1, y0 + 1)
-  const fx = x - x0
-  const fy = y - y0
-  const topWeight = 1 - fy
-  const leftWeight = 1 - fx
-  const offset00 = (y0 * width + x0) * 4
-  const offset10 = (y0 * width + x1) * 4
-  const offset01 = (y1 * width + x0) * 4
-  const offset11 = (y1 * width + x1) * 4
-  for (let channel = 0; channel < 3; channel += 1) {
-    const top = imageData[offset00 + channel] * leftWeight + imageData[offset10 + channel] * fx
-    const bottom = imageData[offset01 + channel] * leftWeight + imageData[offset11 + channel] * fx
-    output[targetOffset + channel] = Math.round(top * topWeight + bottom * fy)
-  }
-  output[targetOffset + 3] = 255
-}
-
-function perspectiveSourcePoint(matrix, x, y) {
-  const divisor = matrix[6] * x + matrix[7] * y + matrix[8]
-  return {
-    x:(matrix[0] * x + matrix[1] * y + matrix[2]) / divisor,
-    y:(matrix[3] * x + matrix[4] * y + matrix[5]) / divisor
+function warpPerspectiveRows(imageData, width, height, perspective, output, outputWidth, startY, endY) {
+  const maxX = width - 1
+  const maxY = height - 1
+  for (let y = startY; y < endY; y += 1) {
+    let numeratorX = perspective[1] * y + perspective[2]
+    let numeratorY = perspective[4] * y + perspective[5]
+    let divisor = perspective[7] * y + perspective[8]
+    for (let x = 0; x < outputWidth; x += 1) {
+      const sourceX = Math.max(0, Math.min(maxX, numeratorX / divisor))
+      const sourceY = Math.max(0, Math.min(maxY, numeratorY / divisor))
+      const x0 = Math.floor(sourceX)
+      const y0 = Math.floor(sourceY)
+      const x1 = Math.min(maxX, x0 + 1)
+      const y1 = Math.min(maxY, y0 + 1)
+      const fx = sourceX - x0
+      const fy = sourceY - y0
+      const inverseX = 1 - fx
+      const inverseY = 1 - fy
+      const offset00 = (y0 * width + x0) * 4
+      const offset10 = (y0 * width + x1) * 4
+      const offset01 = (y1 * width + x0) * 4
+      const offset11 = (y1 * width + x1) * 4
+      const targetOffset = (y * outputWidth + x) * 4
+      for (let channel = 0; channel < 3; channel += 1) {
+        const top = imageData[offset00 + channel] * inverseX + imageData[offset10 + channel] * fx
+        const bottom = imageData[offset01 + channel] * inverseX + imageData[offset11 + channel] * fx
+        output[targetOffset + channel] = Math.round(top * inverseY + bottom * fy)
+      }
+      output[targetOffset + 3] = 255
+      numeratorX += perspective[0]
+      numeratorY += perspective[3]
+      divisor += perspective[6]
+    }
   }
 }
 
@@ -518,13 +575,7 @@ export function warpPerspectivePixels(imageData, width, height, quad, maxSize = 
   const output = new Uint8ClampedArray(outputWidth * outputHeight * 4)
   const perspective = createPerspectiveMap(quad, outputWidth, outputHeight)
 
-  for (let y = 0; y < outputHeight; y += 1) {
-    for (let x = 0; x < outputWidth; x += 1) {
-      const targetOffset = (y * outputWidth + x) * 4
-      const source = perspectiveSourcePoint(perspective, x, y)
-      sampleBilinear(imageData, width, height, source.x, source.y, output, targetOffset)
-    }
-  }
+  warpPerspectiveRows(imageData, width, height, perspective, output, outputWidth, 0, outputHeight)
   return { data: output, width: outputWidth, height: outputHeight }
 }
 
@@ -541,13 +592,7 @@ export async function warpPerspectivePixelsAsync(imageData, width, height, quad,
 
   for (let chunkStart = 0; chunkStart < outputHeight; chunkStart += rowsPerChunk) {
     const chunkEnd = Math.min(outputHeight, chunkStart + rowsPerChunk)
-    for (let y = chunkStart; y < chunkEnd; y += 1) {
-      for (let x = 0; x < outputWidth; x += 1) {
-        const targetOffset = (y * outputWidth + x) * 4
-        const source = perspectiveSourcePoint(perspective, x, y)
-        sampleBilinear(imageData, width, height, source.x, source.y, output, targetOffset)
-      }
-    }
+    warpPerspectiveRows(imageData, width, height, perspective, output, outputWidth, chunkStart, chunkEnd)
     if (chunkEnd < outputHeight) await yieldTask()
   }
   return { data: output, width: outputWidth, height: outputHeight }
@@ -924,26 +969,19 @@ export async function scanDocumentImage(file, options = {}) {
   reportProgress(options, 46, '识别边沿')
   let outputCrop = cropped.crop
   if (preserveResolution && scale < 1) {
-    const fullCrop = {
-      x:Math.max(0, Math.round(cropped.crop.x / width * info.width)),
-      y:Math.max(0, Math.round(cropped.crop.y / height * info.height)),
-      width:Math.max(1, Math.round(cropped.crop.width / width * info.width)),
-      height:Math.max(1, Math.round(cropped.crop.height / height * info.height))
-    }
-    fullCrop.width = Math.min(info.width - fullCrop.x, fullCrop.width)
-    fullCrop.height = Math.min(info.height - fullCrop.y, fullCrop.height)
+    const mapped = mapDocumentQuadToOriginalCrop(quad, cropped.crop, width, height, info.width, info.height)
+    const fullCrop = mapped.crop
     await options.resizeCanvas?.(fullCrop.width, fullCrop.height)
     ctx = uniApi.createCanvasContext(canvasId, component)
-    ctx.drawImage(
-      file.path,
-      fullCrop.x, fullCrop.y, fullCrop.width, fullCrop.height,
-      0, 0, fullCrop.width, fullCrop.height
-    )
+    // The five-argument form is reliable on legacy iOS mini-program canvases.
+    // Moving the full image under the clipped canvas avoids the incompatible source-crop overload.
+    ctx.drawImage(file.path, -fullCrop.x, -fullCrop.y, info.width, info.height)
     await new Promise((resolve) => ctx.draw(false, resolve))
     const fullPixels = await promisify((callbacks) => uniApi.canvasGetImageData({
       canvasId, x:0, y:0, width:fullCrop.width, height:fullCrop.height, ...callbacks
     }, component))
-    quad = scaleDocumentQuad(quad, fullCrop.width / sourceWidth, fullCrop.height / sourceHeight)
+    if (!hasReadablePixels(fullPixels.data)) throw new Error('读取原图失败，请重新拍摄后重试')
+    quad = mapped.quad
     sourceData = fullPixels.data
     sourceWidth = fullCrop.width
     sourceHeight = fullCrop.height
@@ -959,10 +997,19 @@ export async function scanDocumentImage(file, options = {}) {
     ? sourceSlots
     : chooseDetectedSlots(warpedSlots, sourceSlots)
   const useSourceSlots = detectedSlots === sourceSlots && sourceSlots.length > 0
+  if (!hasReadablePixels(warped.data)) throw new Error('裁切结果无有效内容，请重新拍摄后重试')
   await ensureWriteCapacity(Math.ceil(warped.width * warped.height * 0.9), { uniApi })
   reportProgress(options, 84, '保存结果')
   await options.resizeCanvas?.(warped.width, warped.height)
   await promisify((callbacks) => uniApi.canvasPutImageData({ canvasId, x: 0, y: 0, width: warped.width, height: warped.height, data: warped.data, ...callbacks }, component))
+  const checkWidth = Math.min(32, warped.width)
+  const checkHeight = Math.min(32, warped.height)
+  const checkX = Math.max(0, Math.floor((warped.width - checkWidth) / 2))
+  const checkY = Math.max(0, Math.floor((warped.height - checkHeight) / 2))
+  const writtenPixels = await promisify((callbacks) => uniApi.canvasGetImageData({
+    canvasId, x:checkX, y:checkY, width:checkWidth, height:checkHeight, ...callbacks
+  }, component))
+  if (!hasReadablePixels(writtenPixels.data)) throw new Error('裁切结果写入失败，请重试')
   const output = await promisify((callbacks) => uniApi.canvasToTempFilePath({
     canvasId,
     x: 0,
