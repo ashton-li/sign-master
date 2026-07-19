@@ -75,6 +75,7 @@
       class="process-canvas"
       :width="processCanvasSize.width"
       :height="processCanvasSize.height"
+      :style="{ width:`${processCanvasSize.width}px`, height:`${processCanvasSize.height}px` }"
     />
   </view>
 </template>
@@ -480,5 +481,5 @@ function handleCameraError(error) {
 /* #ifdef H5 */
 .scan-page{height:calc(100vh - 44px);min-height:0}
 /* #endif */
-.process-canvas{left:-4px;top:-4px;width:1px;height:1px;opacity:0;pointer-events:none}
+.process-canvas{left:-10000px;top:-10000px;opacity:0;pointer-events:none}
 </style>

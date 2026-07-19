@@ -497,7 +497,6 @@ function mapDocumentQuadToOriginalCrop(quad, detectionCrop, detectionWidth, dete
   const localize = (point) => ({ x:point.x - crop.x, y:point.y - crop.y })
   return {
     crop,
-    sourceQuad:mapped,
     quad:{
       ...mapped,
       topLeft:localize(mapped.topLeft),
@@ -517,6 +516,42 @@ function hasReadablePixels(data) {
     if (data[offset + 3] > 0 && data[offset] + data[offset + 1] + data[offset + 2] > 12) return true
   }
   return false
+}
+
+async function readImageCropWithOffscreenCanvas(api, filePath, imageWidth, imageHeight, crop) {
+  if (typeof api?.createOffscreenCanvas !== 'function') return null
+  try {
+    const canvas = api.createOffscreenCanvas({
+      type:'2d',
+      width:crop.width,
+      height:crop.height
+    })
+    if (!canvas?.createImage || !canvas?.getContext) return null
+    canvas.width = crop.width
+    canvas.height = crop.height
+    const context = canvas.getContext('2d')
+    if (!context?.drawImage || !context?.getImageData) return null
+    const image = canvas.createImage()
+    await new Promise((resolve, reject) => {
+      let settled = false
+      const finish = (callback, value) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        callback(value)
+      }
+      const timer = setTimeout(() => finish(reject, new Error('载入原图超时')), 1500)
+      image.onload = () => finish(resolve)
+      image.onerror = (error) => finish(reject, error || new Error('无法载入原图'))
+      image.src = filePath
+    })
+    context.clearRect?.(0, 0, crop.width, crop.height)
+    context.drawImage(image, -crop.x, -crop.y, imageWidth, imageHeight)
+    const pixels = context.getImageData(0, 0, crop.width, crop.height)
+    return hasReadablePixels(pixels?.data) ? pixels : null
+  } catch {
+    return null
+  }
 }
 
 function createPerspectiveMap(quad, outputWidth, outputHeight) {
@@ -969,40 +1004,32 @@ export async function scanDocumentImage(file, options = {}) {
   let quad = stabilizeDocumentQuad(paperQuad.confidence ? paperQuad : detectDocumentQuad(sourceData, sourceWidth, sourceHeight, bounds), sourceWidth, sourceHeight)
   reportProgress(options, 46, '识别边沿')
   let outputCrop = cropped.crop
+  let resolutionMode = scale < 1 ? 'preview' : 'source'
   if (preserveResolution && scale < 1) {
     const mapped = mapDocumentQuadToOriginalCrop(quad, cropped.crop, width, height, info.width, info.height)
     const fullCrop = mapped.crop
-    await options.resizeCanvas?.(fullCrop.width, fullCrop.height)
-    ctx = uniApi.createCanvasContext(canvasId, component)
-    // The five-argument form is reliable on legacy iOS mini-program canvases.
-    // Moving the full image under the clipped canvas avoids the incompatible source-crop overload.
-    ctx.drawImage(file.path, -fullCrop.x, -fullCrop.y, info.width, info.height)
-    await new Promise((resolve) => ctx.draw(false, resolve))
-    let fullPixels = await promisify((callbacks) => uniApi.canvasGetImageData({
-      canvasId, x:0, y:0, width:fullCrop.width, height:fullCrop.height, ...callbacks
-    }, component))
-    if (hasReadablePixels(fullPixels.data)) {
+    const nativeWx = globalThis.wx
+    const offscreenApi = options.offscreenApi
+      || (typeof nativeWx?.createOffscreenCanvas === 'function' ? nativeWx : uniApi)
+    const fullPixels = await readImageCropWithOffscreenCanvas(
+      offscreenApi,
+      file.path,
+      info.width,
+      info.height,
+      fullCrop
+    )
+    if (fullPixels) {
       quad = mapped.quad
       sourceData = fullPixels.data
       sourceWidth = fullCrop.width
       sourceHeight = fullCrop.height
       outputCrop = fullCrop
+      resolutionMode = 'source'
     } else {
-      // Some iOS WeChat canvas versions return an empty buffer when the image is
-      // drawn with a negative offset. Retry once with the complete source image.
-      await options.resizeCanvas?.(info.width, info.height)
-      ctx = uniApi.createCanvasContext(canvasId, component)
-      ctx.drawImage(file.path, 0, 0, info.width, info.height)
-      await new Promise((resolve) => ctx.draw(false, resolve))
-      fullPixels = await promisify((callbacks) => uniApi.canvasGetImageData({
-        canvasId, x:0, y:0, width:info.width, height:info.height, ...callbacks
-      }, component))
-      if (!hasReadablePixels(fullPixels.data)) throw new Error('读取原图失败，请重新拍摄后重试')
-      quad = mapped.sourceQuad
-      sourceData = fullPixels.data
-      sourceWidth = info.width
-      sourceHeight = info.height
-      outputCrop = { x:0, y:0, width:info.width, height:info.height }
+      // The 900px detection buffer is already validated and remains usable when
+      // a device cannot allocate a full-resolution offscreen canvas. Completing
+      // the scan is preferable to rejecting the captured page.
+      outputCrop = mapped.crop
     }
   }
   const outputLimit = preserveResolution ? Number.POSITIVE_INFINITY : maxDimension
@@ -1036,7 +1063,7 @@ export async function scanDocumentImage(file, options = {}) {
     ...callbacks
   }, component))
   reportProgress(options, 100, '裁切完成')
-  return { ...file, path: output.tempFilePath, name: file.name.replace(/\.[^.]+$/, '') + '-扫描.jpg', width: useSourceSlots ? sourceWidth : warped.width, height: useSourceSlots ? sourceHeight : warped.height, scanBounds: bounds, scanQuad: quad, scanCrop: outputCrop, detectedSlots, detectionSpace: useSourceSlots ? 'source' : 'warped', kind: 'image', extension: 'jpg' }
+  return { ...file, path: output.tempFilePath, name: file.name.replace(/\.[^.]+$/, '') + '-扫描.jpg', width: useSourceSlots ? sourceWidth : warped.width, height: useSourceSlots ? sourceHeight : warped.height, scanBounds: bounds, scanQuad: quad, scanCrop: outputCrop, scanResolutionMode:resolutionMode, detectedSlots, detectionSpace: useSourceSlots ? 'source' : 'warped', kind: 'image', extension: 'jpg' }
 }
 
 export async function analyzeDocumentImage(file, options = {}) {

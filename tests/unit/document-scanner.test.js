@@ -257,14 +257,33 @@ describe('document scanner', () => {
     const resizeCalls = []
     const exportOptions = []
     const drawCalls = []
+    const offscreenDrawCalls = []
     let readCount = 0
     const context = { drawImage(...args) { drawCalls.push(args) }, draw(_reserve, callback) { callback() } }
     const uniApi = {
       getImageInfo({ success }) { success({ width:sourceWidth, height:sourceHeight }) },
       createCanvasContext() { return context },
+      createOffscreenCanvas({ width, height }) {
+        return {
+          width,
+          height,
+          createImage() {
+            const imageNode = {}
+            Object.defineProperty(imageNode, 'src', { set() { Promise.resolve().then(() => imageNode.onload?.()) } })
+            return imageNode
+          },
+          getContext() {
+            return {
+              clearRect() {},
+              drawImage(...args) { offscreenDrawCalls.push(args) },
+              getImageData() { return { data:image(width, height, 245) } }
+            }
+          }
+        }
+      },
       canvasGetImageData({ success }) {
         readCount += 1
-        success({ data:readCount === 1 ? image(previewWidth, previewHeight, 245) : image(sourceWidth, sourceHeight, 245) })
+        success({ data:image(previewWidth, previewHeight, 245) })
       },
       canvasPutImageData({ success }) { success() },
       canvasToTempFilePath(options) {
@@ -282,22 +301,23 @@ describe('document scanner', () => {
       resizeCanvas:async (width, height) => resizeCalls.push({ width, height })
     })
 
-    expect(readCount).toBe(2)
-    expect(drawCalls).toHaveLength(2)
+    expect(readCount).toBe(1)
+    expect(drawCalls).toHaveLength(1)
     expect(drawCalls.every((args) => args.length === 5)).toBe(true)
+    expect(offscreenDrawCalls).toHaveLength(1)
     expect(result.path).toBe('/full-resolution-scan.jpg')
+    expect(result.scanResolutionMode).toBe('source')
     expect(result.width).toBeGreaterThan(150)
     expect(result.height).toBeGreaterThan(210)
     expect(exportOptions[0].destWidth).toBe(result.width)
     expect(exportOptions[0].destHeight).toBe(result.height)
     expect(resizeCalls).toEqual([
       { width:previewWidth, height:previewHeight },
-      { width:sourceWidth, height:sourceHeight },
       { width:result.width, height:result.height }
     ])
   })
 
-  it('rejects an unreadable full-resolution canvas instead of exporting a black scan', async () => {
+  it('rejects an unreadable detection buffer instead of exporting a black scan', async () => {
     const previewWidth = 73
     const previewHeight = 100
     let readCount = 0
@@ -308,7 +328,7 @@ describe('document scanner', () => {
       createCanvasContext() { return context },
       canvasGetImageData({ success }) {
         readCount += 1
-        success({ data:readCount === 1 ? image(previewWidth, previewHeight, 245) : new Uint8ClampedArray(160 * 220 * 4) })
+        success({ data:new Uint8ClampedArray(previewWidth * previewHeight * 4) })
       },
       canvasPutImageData({ success }) { success() },
       canvasToTempFilePath({ success }) { exported = true; success({ tempFilePath:'/black.jpg' }) },
@@ -318,14 +338,14 @@ describe('document scanner', () => {
     await expect(scanDocumentImage({ name:'letter.jpg', path:'/letter.jpg' }, {
       uniApi,
       maxDimension:100,
-      preserveResolution:true,
+      preserveResolution:false,
       detectSignatures:false,
       resizeCanvas:async () => {}
-    })).rejects.toThrow('读取原图失败')
+    })).rejects.toThrow('裁切结果无有效内容')
     expect(exported).toBe(false)
   })
 
-  it('falls back to reading the complete source when offset canvas drawing is empty', async () => {
+  it('completes with the validated preview when offscreen source reading is unavailable', async () => {
     const sourceWidth = 160
     const sourceHeight = 220
     const previewWidth = 73
@@ -339,9 +359,7 @@ describe('document scanner', () => {
       createCanvasContext() { return context },
       canvasGetImageData({ success }) {
         readCount += 1
-        if (readCount === 1) success({ data:image(previewWidth, previewHeight, 245) })
-        else if (readCount === 2) success({ data:new Uint8ClampedArray(sourceWidth * sourceHeight * 4) })
-        else success({ data:image(sourceWidth, sourceHeight, 245) })
+        success({ data:image(previewWidth, previewHeight, 245) })
       },
       canvasPutImageData({ success }) { success() },
       canvasToTempFilePath({ success }) { success({ tempFilePath:'/fallback-scan.jpg' }) },
@@ -358,9 +376,11 @@ describe('document scanner', () => {
     })
 
     expect(result.path).toBe('/fallback-scan.jpg')
-    expect(readCount).toBe(3)
-    expect(drawCalls).toHaveLength(3)
-    expect(drawCalls[2]).toEqual(['/letter.jpg', 0, 0, sourceWidth, sourceHeight])
-    expect(resizeCalls).toContainEqual({ width:sourceWidth, height:sourceHeight })
+    expect(result.scanResolutionMode).toBe('preview')
+    expect(readCount).toBe(1)
+    expect(drawCalls).toHaveLength(1)
+    expect(result.width).toBeLessThanOrEqual(previewWidth)
+    expect(result.height).toBeLessThanOrEqual(previewHeight)
+    expect(resizeCalls).not.toContainEqual({ width:sourceWidth, height:sourceHeight })
   })
 })

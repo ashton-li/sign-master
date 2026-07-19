@@ -135,6 +135,7 @@ describe('mp-weixin compatibility guards', () => {
     const settingsPackage = pages.subPackages.find((item) => item.root === 'subpackages/settings')
     const signPage = readText('src/pages/sign/index.vue')
     const scanner = readText('src/pages/sign/scan.vue')
+    const scannerCore = readText('src/core/vision/documentScanner.js')
 
     expect(settingsPackage.pages.map((page) => page.path)).toEqual(expect.arrayContaining(['capacity', 'about']))
     expect(signPage).not.toContain('签字位识别为实验性功能')
@@ -146,6 +147,10 @@ describe('mp-weixin compatibility guards', () => {
     expect(scanner).toContain('yieldToUi:true')
     expect(scanner).toContain('cropQueue')
     expect(scanner).toContain('正在后台裁切，可继续拍摄')
+    expect(scanner).toContain(':style="{ width:`${processCanvasSize.width}px`, height:`${processCanvasSize.height}px` }"')
+    expect(scanner).not.toContain('width:1px;height:1px')
+    expect(scannerCore).toContain('createOffscreenCanvas')
+    expect(scannerCore).toContain("scanResolutionMode:resolutionMode")
     expect(scanner).toContain('createScanPdfFromPathsInline')
     expect(scanner).toContain("'%PDF-1.4")
     expect(scanner).not.toContain("from './scanPdf'")
