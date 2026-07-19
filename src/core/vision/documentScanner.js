@@ -518,7 +518,7 @@ function hasReadablePixels(data) {
   return false
 }
 
-async function readImageCropWithOffscreenCanvas(api, filePath, imageWidth, imageHeight, crop) {
+async function readImageCropWithOffscreenCanvas(api, filePath, imageWidth, imageHeight, crop, timeoutMs = 800) {
   if (typeof api?.createOffscreenCanvas !== 'function') return null
   try {
     const canvas = api.createOffscreenCanvas({
@@ -540,7 +540,7 @@ async function readImageCropWithOffscreenCanvas(api, filePath, imageWidth, image
         clearTimeout(timer)
         callback(value)
       }
-      const timer = setTimeout(() => finish(reject, new Error('载入原图超时')), 1500)
+      const timer = setTimeout(() => finish(reject, new Error('载入原图超时')), timeoutMs)
       image.onload = () => finish(resolve)
       image.onerror = (error) => finish(reject, error || new Error('无法载入原图'))
       image.src = filePath
@@ -602,7 +602,37 @@ function warpPerspectiveRows(imageData, width, height, perspective, output, outp
   }
 }
 
-export function warpPerspectivePixels(imageData, width, height, quad, maxSize = 960) {
+function warpPerspectiveRowsNearest(imageData, width, height, perspective, output, outputWidth, startY, endY) {
+  const maxX = width - 1
+  const maxY = height - 1
+  const sourcePixels = new Uint32Array(imageData.buffer, imageData.byteOffset, imageData.byteLength / 4)
+  const outputPixels = new Uint32Array(output.buffer, output.byteOffset, output.byteLength / 4)
+  for (let y = startY; y < endY; y += 1) {
+    let numeratorX = perspective[1] * y + perspective[2]
+    let numeratorY = perspective[4] * y + perspective[5]
+    let divisor = perspective[7] * y + perspective[8]
+    let targetOffset = y * outputWidth
+    for (let x = 0; x < outputWidth; x += 1) {
+      const sourceX = Math.max(0, Math.min(maxX, Math.round(numeratorX / divisor)))
+      const sourceY = Math.max(0, Math.min(maxY, Math.round(numeratorY / divisor)))
+      outputPixels[targetOffset] = sourcePixels[sourceY * width + sourceX]
+      targetOffset += 1
+      numeratorX += perspective[0]
+      numeratorY += perspective[3]
+      divisor += perspective[6]
+    }
+  }
+}
+
+function warpRows(imageData, width, height, perspective, output, outputWidth, startY, endY, interpolation) {
+  if (interpolation === 'nearest') {
+    warpPerspectiveRowsNearest(imageData, width, height, perspective, output, outputWidth, startY, endY)
+    return
+  }
+  warpPerspectiveRows(imageData, width, height, perspective, output, outputWidth, startY, endY)
+}
+
+export function warpPerspectivePixels(imageData, width, height, quad, maxSize = 960, options = {}) {
   const naturalWidth = Math.max(pointDistance(quad.topLeft, quad.topRight), pointDistance(quad.bottomLeft, quad.bottomRight))
   const naturalHeight = Math.max(pointDistance(quad.topLeft, quad.bottomLeft), pointDistance(quad.topRight, quad.bottomRight))
   const scale = Math.min(1, maxSize / Math.max(naturalWidth, naturalHeight))
@@ -611,7 +641,7 @@ export function warpPerspectivePixels(imageData, width, height, quad, maxSize = 
   const output = new Uint8ClampedArray(outputWidth * outputHeight * 4)
   const perspective = createPerspectiveMap(quad, outputWidth, outputHeight)
 
-  warpPerspectiveRows(imageData, width, height, perspective, output, outputWidth, 0, outputHeight)
+  warpRows(imageData, width, height, perspective, output, outputWidth, 0, outputHeight, options.interpolation)
   return { data: output, width: outputWidth, height: outputHeight }
 }
 
@@ -628,7 +658,7 @@ export async function warpPerspectivePixelsAsync(imageData, width, height, quad,
 
   for (let chunkStart = 0; chunkStart < outputHeight; chunkStart += rowsPerChunk) {
     const chunkEnd = Math.min(outputHeight, chunkStart + rowsPerChunk)
-    warpPerspectiveRows(imageData, width, height, perspective, output, outputWidth, chunkStart, chunkEnd)
+    warpRows(imageData, width, height, perspective, output, outputWidth, chunkStart, chunkEnd, options.interpolation)
     if (chunkEnd < outputHeight) await yieldTask()
   }
   return { data: output, width: outputWidth, height: outputHeight }
@@ -932,7 +962,7 @@ async function scanDocumentImageInBrowser(file, options = {}) {
   const outputLimit = preserveResolution ? Number.POSITIVE_INFINITY : maxDimension
   const warped = options.yieldToUi
     ? await warpPerspectivePixelsAsync(warpData, warpWidth, warpHeight, warpQuad, outputLimit, options)
-    : warpPerspectivePixels(warpData, warpWidth, warpHeight, warpQuad, outputLimit)
+    : warpPerspectivePixels(warpData, warpWidth, warpHeight, warpQuad, outputLimit, options)
   reportProgress(options, 74, '透视裁切')
   const warpedSlots = detectSignatures ? detectSignatureLines(warped.data, warped.width, warped.height) : []
   const detectedSlots = options.preferSourceDetection && sourceSlots.length
@@ -1016,7 +1046,8 @@ export async function scanDocumentImage(file, options = {}) {
       file.path,
       info.width,
       info.height,
-      fullCrop
+      fullCrop,
+      options.sourceLoadTimeout || 800
     )
     if (fullPixels) {
       quad = mapped.quad
@@ -1035,7 +1066,7 @@ export async function scanDocumentImage(file, options = {}) {
   const outputLimit = preserveResolution ? Number.POSITIVE_INFINITY : maxDimension
   const warped = options.yieldToUi
     ? await warpPerspectivePixelsAsync(sourceData, sourceWidth, sourceHeight, quad, outputLimit, options)
-    : warpPerspectivePixels(sourceData, sourceWidth, sourceHeight, quad, outputLimit)
+    : warpPerspectivePixels(sourceData, sourceWidth, sourceHeight, quad, outputLimit, options)
   reportProgress(options, 74, '透视裁切')
   const warpedSlots = detectSignatures ? detectSignatureLines(warped.data, warped.width, warped.height) : []
   const detectedSlots = options.preferSourceDetection && sourceSlots.length

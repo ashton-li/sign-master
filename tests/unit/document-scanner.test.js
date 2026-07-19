@@ -230,6 +230,42 @@ describe('document scanner', () => {
     expect(result.data).toHaveLength(result.width * result.height * 4)
   })
 
+  it('uses exact source pixels for the sharp document interpolation mode', () => {
+    const width = 12
+    const height = 16
+    const data = new Uint8ClampedArray(width * height * 4)
+    for (let index = 0; index < width * height; index += 1) {
+      const offset = index * 4
+      data[offset] = index % 251
+      data[offset + 1] = (index * 7) % 251
+      data[offset + 2] = (index * 13) % 251
+      data[offset + 3] = 255
+    }
+    const sourceColors = new Set(Array.from({ length:width * height }, (_, index) => (
+      `${data[index * 4]},${data[index * 4 + 1]},${data[index * 4 + 2]},${data[index * 4 + 3]}`
+    )))
+    const result = warpPerspectivePixels(data, width, height, {
+      topLeft:{ x:1.2, y:0.8 }, topRight:{ x:10.5, y:1.4 },
+      bottomRight:{ x:10.1, y:14.8 }, bottomLeft:{ x:0.7, y:14.2 }
+    }, 100, { interpolation:'nearest' })
+    const bilinear = warpPerspectivePixels(data, width, height, {
+      topLeft:{ x:1.2, y:0.8 }, topRight:{ x:10.5, y:1.4 },
+      bottomRight:{ x:10.1, y:14.8 }, bottomLeft:{ x:0.7, y:14.2 }
+    }, 100)
+    const horizontalEdgeEnergy = (pixels, outputWidth) => {
+      let energy = 0
+      for (let offset = 4; offset < pixels.length; offset += 4) {
+        if ((offset / 4) % outputWidth) energy += Math.abs(pixels[offset] - pixels[offset - 4])
+      }
+      return energy
+    }
+
+    for (let offset = 0; offset < result.data.length; offset += 4) {
+      expect(sourceColors.has(`${result.data[offset]},${result.data[offset + 1]},${result.data[offset + 2]},${result.data[offset + 3]}`)).toBe(true)
+    }
+    expect(horizontalEdgeEnergy(result.data, result.width)).toBeGreaterThan(horizontalEdgeEnergy(bilinear.data, bilinear.width))
+  })
+
   it('yields between perspective chunks while preserving the warped output', async () => {
     const width = 80; const height = 120; const data = image(width, height)
     const quad = {

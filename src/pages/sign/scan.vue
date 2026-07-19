@@ -336,13 +336,14 @@ function queueCrop(pageId, source) {
         uniApi:uni,
         canvasId:'scanProcessCanvas',
         component:instance?.proxy,
-        maxDimension:900,
-        quality:0.98,
+        maxDimension:1280,
+        quality:1,
         preserveResolution:true,
         resizeCanvas:resizeProcessCanvas,
         detectSignatures:false,
         yieldToUi:true,
-        rowsPerChunk:36,
+        interpolation:'nearest',
+        rowsPerChunk:96,
         onProgress:({ value, label }) => {
           if (!cancelled && hasPage(pageId)) patchPage(pageId, { status:'processing', progress:value, progressLabel:label })
         }
