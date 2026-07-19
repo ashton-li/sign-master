@@ -282,7 +282,7 @@ describe('document scanner', () => {
       resizeCanvas:async (width, height) => resizeCalls.push({ width, height })
     })
 
-    expect(readCount).toBe(3)
+    expect(readCount).toBe(2)
     expect(drawCalls).toHaveLength(2)
     expect(drawCalls.every((args) => args.length === 5)).toBe(true)
     expect(result.path).toBe('/full-resolution-scan.jpg')
@@ -323,5 +323,44 @@ describe('document scanner', () => {
       resizeCanvas:async () => {}
     })).rejects.toThrow('读取原图失败')
     expect(exported).toBe(false)
+  })
+
+  it('falls back to reading the complete source when offset canvas drawing is empty', async () => {
+    const sourceWidth = 160
+    const sourceHeight = 220
+    const previewWidth = 73
+    const previewHeight = 100
+    const drawCalls = []
+    const resizeCalls = []
+    let readCount = 0
+    const context = { drawImage(...args) { drawCalls.push(args) }, draw(_reserve, callback) { callback() } }
+    const uniApi = {
+      getImageInfo({ success }) { success({ width:sourceWidth, height:sourceHeight }) },
+      createCanvasContext() { return context },
+      canvasGetImageData({ success }) {
+        readCount += 1
+        if (readCount === 1) success({ data:image(previewWidth, previewHeight, 245) })
+        else if (readCount === 2) success({ data:new Uint8ClampedArray(sourceWidth * sourceHeight * 4) })
+        else success({ data:image(sourceWidth, sourceHeight, 245) })
+      },
+      canvasPutImageData({ success }) { success() },
+      canvasToTempFilePath({ success }) { success({ tempFilePath:'/fallback-scan.jpg' }) },
+      getStorageInfoSync() { return { currentSize:0, limitSize:10240 } }
+    }
+
+    const result = await scanDocumentImage({ name:'letter.jpg', path:'/letter.jpg', kind:'image' }, {
+      uniApi,
+      maxDimension:100,
+      preserveResolution:true,
+      detectSignatures:false,
+      canvasFlushDelay:0,
+      resizeCanvas:async (width, height) => resizeCalls.push({ width, height })
+    })
+
+    expect(result.path).toBe('/fallback-scan.jpg')
+    expect(readCount).toBe(3)
+    expect(drawCalls).toHaveLength(3)
+    expect(drawCalls[2]).toEqual(['/letter.jpg', 0, 0, sourceWidth, sourceHeight])
+    expect(resizeCalls).toContainEqual({ width:sourceWidth, height:sourceHeight })
   })
 })

@@ -497,6 +497,7 @@ function mapDocumentQuadToOriginalCrop(quad, detectionCrop, detectionWidth, dete
   const localize = (point) => ({ x:point.x - crop.x, y:point.y - crop.y })
   return {
     crop,
+    sourceQuad:mapped,
     quad:{
       ...mapped,
       topLeft:localize(mapped.topLeft),
@@ -977,15 +978,32 @@ export async function scanDocumentImage(file, options = {}) {
     // Moving the full image under the clipped canvas avoids the incompatible source-crop overload.
     ctx.drawImage(file.path, -fullCrop.x, -fullCrop.y, info.width, info.height)
     await new Promise((resolve) => ctx.draw(false, resolve))
-    const fullPixels = await promisify((callbacks) => uniApi.canvasGetImageData({
+    let fullPixels = await promisify((callbacks) => uniApi.canvasGetImageData({
       canvasId, x:0, y:0, width:fullCrop.width, height:fullCrop.height, ...callbacks
     }, component))
-    if (!hasReadablePixels(fullPixels.data)) throw new Error('读取原图失败，请重新拍摄后重试')
-    quad = mapped.quad
-    sourceData = fullPixels.data
-    sourceWidth = fullCrop.width
-    sourceHeight = fullCrop.height
-    outputCrop = fullCrop
+    if (hasReadablePixels(fullPixels.data)) {
+      quad = mapped.quad
+      sourceData = fullPixels.data
+      sourceWidth = fullCrop.width
+      sourceHeight = fullCrop.height
+      outputCrop = fullCrop
+    } else {
+      // Some iOS WeChat canvas versions return an empty buffer when the image is
+      // drawn with a negative offset. Retry once with the complete source image.
+      await options.resizeCanvas?.(info.width, info.height)
+      ctx = uniApi.createCanvasContext(canvasId, component)
+      ctx.drawImage(file.path, 0, 0, info.width, info.height)
+      await new Promise((resolve) => ctx.draw(false, resolve))
+      fullPixels = await promisify((callbacks) => uniApi.canvasGetImageData({
+        canvasId, x:0, y:0, width:info.width, height:info.height, ...callbacks
+      }, component))
+      if (!hasReadablePixels(fullPixels.data)) throw new Error('读取原图失败，请重新拍摄后重试')
+      quad = mapped.sourceQuad
+      sourceData = fullPixels.data
+      sourceWidth = info.width
+      sourceHeight = info.height
+      outputCrop = { x:0, y:0, width:info.width, height:info.height }
+    }
   }
   const outputLimit = preserveResolution ? Number.POSITIVE_INFINITY : maxDimension
   const warped = options.yieldToUi
@@ -1002,14 +1020,9 @@ export async function scanDocumentImage(file, options = {}) {
   reportProgress(options, 84, '保存结果')
   await options.resizeCanvas?.(warped.width, warped.height)
   await promisify((callbacks) => uniApi.canvasPutImageData({ canvasId, x: 0, y: 0, width: warped.width, height: warped.height, data: warped.data, ...callbacks }, component))
-  const checkWidth = Math.min(32, warped.width)
-  const checkHeight = Math.min(32, warped.height)
-  const checkX = Math.max(0, Math.floor((warped.width - checkWidth) / 2))
-  const checkY = Math.max(0, Math.floor((warped.height - checkHeight) / 2))
-  const writtenPixels = await promisify((callbacks) => uniApi.canvasGetImageData({
-    canvasId, x:checkX, y:checkY, width:checkWidth, height:checkHeight, ...callbacks
-  }, component))
-  if (!hasReadablePixels(writtenPixels.data)) throw new Error('裁切结果写入失败，请重试')
+  // canvasPutImageData may resolve before the legacy WeChat canvas is ready for
+  // export. A short flush delay is reliable; an immediate readback is not.
+  await new Promise((resolve) => setTimeout(resolve, options.canvasFlushDelay ?? 24))
   const output = await promisify((callbacks) => uniApi.canvasToTempFilePath({
     canvasId,
     x: 0,
