@@ -914,6 +914,105 @@ function reportProgress(options, value, label) {
   } catch {}
 }
 
+export function mapGuideFrameToImageCrop(imageWidth, imageHeight, guide = {}) {
+  const previewWidth = Math.max(1, Number(guide.previewWidth) || 1)
+  const previewHeight = Math.max(1, Number(guide.previewHeight) || 1)
+  const frameX = Math.max(0, Math.min(1, Number(guide.x) || 0)) * previewWidth
+  const frameY = Math.max(0, Math.min(1, Number(guide.y) || 0)) * previewHeight
+  const frameWidth = Math.max(0.01, Math.min(1, Number(guide.width) || 1)) * previewWidth
+  const frameHeight = Math.max(0.01, Math.min(1, Number(guide.height) || 1)) * previewHeight
+  const coverScale = Math.max(previewWidth / imageWidth, previewHeight / imageHeight)
+  const renderedWidth = imageWidth * coverScale
+  const renderedHeight = imageHeight * coverScale
+  const hiddenX = Math.max(0, (renderedWidth - previewWidth) / 2)
+  const hiddenY = Math.max(0, (renderedHeight - previewHeight) / 2)
+  const left = Math.max(0, Math.floor((frameX + hiddenX) / coverScale))
+  const top = Math.max(0, Math.floor((frameY + hiddenY) / coverScale))
+  const right = Math.min(imageWidth, Math.ceil((frameX + frameWidth + hiddenX) / coverScale))
+  const bottom = Math.min(imageHeight, Math.ceil((frameY + frameHeight + hiddenY) / coverScale))
+  return {
+    x:left,
+    y:top,
+    width:Math.max(1, right - left),
+    height:Math.max(1, bottom - top)
+  }
+}
+
+export async function cropImageToGuideFrame(file, guide, options = {}) {
+  const uniApi = options.uniApi || globalThis.uni
+  const canvasId = options.canvasId || 'scanCanvas'
+  const component = options.component
+  if (!file?.path) return file
+  if (typeof uniApi?.getImageInfo !== 'function' && typeof Image !== 'undefined' && typeof document !== 'undefined') {
+    reportProgress(options, 8, '读取照片')
+    const image = await new Promise((resolve, reject) => {
+      const element = new Image()
+      element.onload = () => resolve(element)
+      element.onerror = () => reject(new Error('当前环境无法读取拍摄图片'))
+      element.src = file.path
+    })
+    const crop = mapGuideFrameToImageCrop(image.naturalWidth, image.naturalHeight, guide)
+    const canvas = document.createElement('canvas')
+    canvas.width = crop.width
+    canvas.height = crop.height
+    const context = canvas.getContext('2d')
+    reportProgress(options, 40, '按取景框裁切')
+    context.drawImage(image, crop.x, crop.y, crop.width, crop.height, 0, 0, crop.width, crop.height)
+    const blob = await new Promise((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new Error('无法保存裁切图片')), 'image/jpeg', options.quality ?? 1))
+    reportProgress(options, 100, '裁切完成')
+    return {
+      ...file,
+      path:URL.createObjectURL(blob),
+      name:file.name.replace(/\.[^.]+$/, '') + '-扫描.jpg',
+      width:crop.width,
+      height:crop.height,
+      scanCrop:crop,
+      scanResolutionMode:'source-direct',
+      detectedSlots:[],
+      kind:'image',
+      extension:'jpg'
+    }
+  }
+  if (typeof uniApi?.getImageInfo !== 'function') throw new Error('当前环境无法读取拍摄图片')
+
+  reportProgress(options, 8, '读取照片')
+  const info = await promisify((callbacks) => uniApi.getImageInfo({ src:file.path, ...callbacks }))
+  const crop = mapGuideFrameToImageCrop(info.width, info.height, guide)
+  await ensureWriteCapacity(Math.ceil(crop.width * crop.height * 0.8), { uniApi })
+  reportProgress(options, 40, '按取景框裁切')
+  await options.resizeCanvas?.(crop.width, crop.height)
+  const context = uniApi.createCanvasContext(canvasId, component)
+  context.drawImage(file.path, -crop.x, -crop.y, info.width, info.height)
+  await new Promise((resolve) => context.draw(false, resolve))
+  await new Promise((resolve) => setTimeout(resolve, options.canvasFlushDelay ?? 24))
+  reportProgress(options, 82, '保存原画质图片')
+  const output = await promisify((callbacks) => uniApi.canvasToTempFilePath({
+    canvasId,
+    x:0,
+    y:0,
+    width:crop.width,
+    height:crop.height,
+    destWidth:crop.width,
+    destHeight:crop.height,
+    fileType:'jpg',
+    quality:options.quality ?? 1,
+    ...callbacks
+  }, component))
+  reportProgress(options, 100, '裁切完成')
+  return {
+    ...file,
+    path:output.tempFilePath,
+    name:file.name.replace(/\.[^.]+$/, '') + '-扫描.jpg',
+    width:crop.width,
+    height:crop.height,
+    scanCrop:crop,
+    scanResolutionMode:'source-direct',
+    detectedSlots:[],
+    kind:'image',
+    extension:'jpg'
+  }
+}
+
 async function scanDocumentImageInBrowser(file, options = {}) {
   reportProgress(options, 4, '读取照片')
   const image = await new Promise((resolve, reject) => {

@@ -316,8 +316,8 @@ test('scan page keeps controls usable and returns the corrected real form', asyn
   await captureVisual(page, testInfo, 'manual-scan-preview')
 
   await page.locator('.finish-button').click()
-  await expect(page.locator('.recognize-layout')).toBeVisible({ timeout: 15000 })
-  await expect(page.getByText('扫描 PDF 已生成')).toBeVisible()
+  await expect(page.locator('.draw-page')).toBeVisible({ timeout: 15000 })
+  await expect(page.getByText('手写签名', { exact:true })).toBeVisible()
 })
 
 test('applies a saved template directly without reanalyzing the new file', async ({ page }, testInfo) => {

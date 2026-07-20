@@ -17,7 +17,7 @@
       <!-- #endif -->
 
       <!-- #ifndef MP-WEIXIN -->
-      <view class="camera h5-camera"><SvgIcon name="scan" :size="54" color="#ffffff" /><text>将文稿放入边框，点击拍照</text></view>
+      <view class="camera h5-camera"><SvgIcon name="scan" :size="54" color="#ffffff" /><text>将纸张四边对齐边框，点击拍照</text></view>
       <view class="scan-overlay">
         <view class="guide-frame"><view class="corner tl" /><view class="corner tr" /><view class="corner bl" /><view class="corner br" /></view>
         <text class="scan-status">{{ statusText }}</text>
@@ -88,7 +88,7 @@ import { useTheme } from '../../composables/useTheme'
 import { ensureWriteCapacity, fileSize } from '../../core/storage/capacity'
 import { moveScanPage } from '../../core/file/scanPages'
 import { discardTemporaryDocument, persistLocalFile, pickDocumentSource, removeManagedFile } from '../../core/file/sourcePicker'
-import { scanDocumentImage } from '../../core/vision/documentScanner'
+import { cropImageToGuideFrame } from '../../core/vision/documentScanner'
 
 const instance = getCurrentInstance()
 const { themeClass } = useTheme()
@@ -239,7 +239,7 @@ const failedCropCount = computed(() => scannedPages.value.filter((page) => page.
 const previewStatusText = computed(() => {
   if (failedCropCount.value) return `${failedCropCount.value} 页裁切失败，可点击重试`
   if (pendingCropCount.value) return `${pendingCropCount.value} 页正在后台裁切，可继续拍摄`
-  return '文档边沿识别与自动裁切已完成'
+  return '原尺寸裁切已完成'
 })
 const finishButtonText = computed(() => {
   if (finishBusy.value && pendingCropCount.value) return '等待裁切…'
@@ -250,7 +250,7 @@ const finishButtonText = computed(() => {
 const statusText = computed(() => {
   if (captureBusy.value) return '正在保存照片…'
   if (cameraError.value) return cameraError.value
-  return '将整张纸放入辅助框内，点击拍照'
+  return '请将纸张四边对齐边框后拍照'
 })
 
 onLoad(() => {
@@ -282,11 +282,66 @@ async function acquirePhoto() {
   // #endif
 }
 
+function defaultGuideFrame() {
+  const windowInfo = typeof uni.getWindowInfo === 'function' ? uni.getWindowInfo() : uni.getSystemInfoSync()
+  const previewWidth = Math.max(1, Number(windowInfo.windowWidth) || 375)
+  const previewHeight = Math.max(1, Number(windowInfo.windowHeight) || 667)
+  const frameWidth = previewWidth * 0.82
+  const frameHeight = frameWidth * 297 / 210
+  const overlayHeight = Math.max(1, previewHeight - 112)
+  return {
+    previewWidth,
+    previewHeight,
+    x:(previewWidth - frameWidth) / 2 / previewWidth,
+    y:Math.max(0, (overlayHeight - frameHeight) / 2) / previewHeight,
+    width:frameWidth / previewWidth,
+    height:Math.min(1, frameHeight / previewHeight)
+  }
+}
+
+function measureGuideFrame() {
+  return new Promise((resolve) => {
+    let settled = false
+    const finish = (value) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve(value)
+    }
+    const timer = setTimeout(() => finish(defaultGuideFrame()), 350)
+    if (typeof uni.createSelectorQuery !== 'function') {
+      finish(defaultGuideFrame())
+      return
+    }
+    const query = uni.createSelectorQuery().in(instance?.proxy)
+    query.select('.camera').boundingClientRect()
+    query.select('.guide-frame').boundingClientRect()
+    query.exec((rects = []) => {
+      const camera = rects[0]
+      const guide = rects[1]
+      if (!camera?.width || !camera?.height || !guide?.width || !guide?.height) {
+        finish(defaultGuideFrame())
+        return
+      }
+      finish({
+        previewWidth:camera.width,
+        previewHeight:camera.height,
+        x:Math.max(0, (guide.left - camera.left) / camera.width),
+        y:Math.max(0, (guide.top - camera.top) / camera.height),
+        width:Math.min(1, guide.width / camera.width),
+        height:Math.min(1, guide.height / camera.height)
+      })
+    })
+  })
+}
+
 async function handleCapture() {
   if (captureBusy.value || finishBusy.value || cancelled) return
   captureBusy.value = true
   try {
-    const original = await acquirePhoto()
+    const guideCrop = await measureGuideFrame()
+    const captured = await acquirePhoto()
+    const original = captured ? { ...captured, guideCrop } : captured
     if (!original?.path || cancelled) return
     const pageId = `scan-page-${Date.now()}-${Math.random().toString(36).slice(2,7)}`
     const pendingPage = {
@@ -332,18 +387,12 @@ function queueCrop(pageId, source) {
     if (cancelled || !hasPage(pageId)) return
     patchPage(pageId, { status:'processing', progress:4, progressLabel:'读取照片' })
     try {
-      const scanned = await scanDocumentImage(source, {
+      const scanned = await cropImageToGuideFrame(source, source.guideCrop || defaultGuideFrame(), {
         uniApi:uni,
         canvasId:'scanProcessCanvas',
         component:instance?.proxy,
-        maxDimension:1280,
         quality:1,
-        preserveResolution:true,
         resizeCanvas:resizeProcessCanvas,
-        detectSignatures:false,
-        yieldToUi:true,
-        interpolation:'nearest',
-        rowsPerChunk:96,
         onProgress:({ value, label }) => {
           if (!cancelled && hasPage(pageId)) patchPage(pageId, { status:'processing', progress:value, progressLabel:label })
         }
@@ -479,6 +528,7 @@ function handleCameraError(error) {
 <style scoped>
 .scan-page{position:relative;height:100vh;min-height:100vh;overflow:hidden;background:#0d0e12}.camera{position:absolute;inset:0;width:100%;height:100%}.h5-camera{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;color:#fff;font-size:13px}.scan-overlay{position:absolute;z-index:10;inset:0 0 112px;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,.15);pointer-events:none}.guide-frame{position:relative;width:84vw;height:64vh;border:1px solid rgba(255,255,255,.58)}.corner{position:absolute;width:32px;height:32px;border-color:#fff;border-style:solid}.tl{left:-2px;top:-2px;border-width:3px 0 0 3px}.tr{right:-2px;top:-2px;border-width:3px 3px 0 0}.bl{left:-2px;bottom:-2px;border-width:0 0 3px 3px}.br{right:-2px;bottom:-2px;border-width:0 3px 3px 0}.scan-status{margin-top:17px;padding:8px 13px;color:#fff;font-size:11px;border-radius:999px;background:rgba(0,0,0,.68)}.camera-actions{position:absolute;left:0;right:0;bottom:0;z-index:30;height:112px;background:rgba(10,11,15,.92)}.capture{position:absolute;left:50%;top:14px;display:flex;width:74px;height:74px;align-items:center;justify-content:center;padding:0;border:3px solid #fff;border-radius:50%;background:transparent;transform:translateX(-50%)}.capture.disabled,.capture[disabled]{opacity:.45}.capture-inner{width:56px;height:56px;border-radius:50%;background:#fff}.capture-pressed{transform:translateX(-50%) scale(.94)}.preview-stage{display:flex;height:100%;flex-direction:column;background:var(--color-bg)}.preview-summary{display:flex;flex-shrink:0;align-items:center;justify-content:space-between;padding:16px 18px 12px}.preview-summary>view{display:flex;flex-direction:column}.preview-summary>view text:first-child{color:var(--color-ink);font-size:18px;font-weight:900}.preview-summary>view text:last-child{margin-top:4px;color:var(--color-tertiary);font-size:10px}.preview-summary>text{display:flex;height:30px;align-items:center;padding:0 10px;color:var(--color-brand);font-size:11px;font-weight:900;border-radius:999px;background:var(--color-brand-soft)}.sort-tip{display:flex;flex-shrink:0;align-items:center;gap:7px;margin:0 18px 10px;padding:9px 11px;color:var(--color-muted);font-size:10px;border-radius:7px;background:var(--color-elevated)}.preview-list{min-height:0;flex:1;width:auto;margin:0 18px}.page-card{position:relative;display:grid;height:94px;grid-template-columns:68px minmax(0,1fr) 36px 36px;align-items:center;gap:8px;margin-bottom:10px;padding:8px;color:var(--color-ink);border:1px solid var(--color-quaternary);border-radius:8px;background:var(--color-surface);box-shadow:var(--shadow-card-soft);transition:opacity .15s,border-color .15s,transform .15s}.page-card.dragging{z-index:2;opacity:.55;transform:scale(.98)}.page-card.target{border-color:var(--color-brand);box-shadow:0 0 0 3px rgba(88,86,224,.1)}.page-thumb{position:relative;width:68px;height:78px;overflow:hidden;border-radius:5px;background:var(--color-elevated)}.page-thumb>image{width:100%;height:100%}.crop-progress{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:900;background:rgba(29,31,42,.58)}.crop-progress.error{background:rgba(190,48,65,.72)}.page-copy{display:flex;min-width:0;flex-direction:column}.page-copy text:first-child{font-size:13px;font-weight:900}.page-copy text:nth-child(2){margin-top:6px;overflow:hidden;color:var(--color-muted);font-size:9px;text-overflow:ellipsis;white-space:nowrap}.page-copy text:last-child{margin-top:5px;color:var(--color-tertiary);font-size:8px}.crop-error{display:block;margin-top:4px;overflow:hidden;color:var(--color-danger);font-size:8px;line-height:11px;text-overflow:ellipsis;white-space:nowrap}.crop-state.processing,.crop-state.queued{color:var(--color-brand)!important}.retry-crop{display:flex;width:74px;height:22px;align-items:center;justify-content:center;margin:3px 0 0;padding:0;color:#fff;font-size:9px;font-weight:800;line-height:1;border-radius:5px;background:var(--color-danger)}.delete-page,.drag-handle{display:flex;width:34px;height:42px;align-items:center;justify-content:center;padding:0;border-radius:7px}.delete-page{background:rgba(231,76,94,.1)}.drag-handle{touch-action:none;background:var(--color-elevated)}.list-spacer{height:8px}.preview-actions{display:grid;flex-shrink:0;grid-template-columns:1fr 1.35fr;gap:10px;padding:10px 18px calc(12px + env(safe-area-inset-bottom));border-top:1px solid var(--color-quaternary);background:var(--color-surface)}.preview-actions button{display:flex;height:48px;align-items:center;justify-content:center;gap:7px;padding:0;font-size:13px;font-weight:900;border-radius:8px}.continue-button{color:var(--color-brand);border:1px solid rgba(88,86,224,.28);background:var(--color-brand-soft)}.finish-button{color:#fff;background:#238458}.process-canvas{position:fixed;left:-2200px;top:-2200px;width:900px;height:900px}
 .preview-actions{display:flex;min-height:72px;gap:12px;padding:12px 18px calc(16px + env(safe-area-inset-bottom))}.preview-actions button{box-sizing:border-box;display:flex;width:100%;height:56px;min-width:0;align-items:center;justify-content:center;gap:9px;margin:0!important;padding:0 12px;font-size:14px;line-height:1;font-weight:900;letter-spacing:0;border-radius:8px}.preview-actions button text{display:block;line-height:20px;text-align:center;white-space:nowrap}.preview-actions button[disabled]{opacity:.52}.continue-button{flex:1;color:var(--color-brand);border:1px solid rgba(88,86,224,.32);background:var(--color-surface);box-shadow:0 4px 12px rgba(32,34,48,.06)}.finish-button{flex:1.15;color:#fff;border:1px solid #1f7c55;background:#238458;box-shadow:0 6px 16px rgba(35,132,88,.24)}
+.guide-frame{width:82vw;height:116vw}
 /* #ifdef H5 */
 .scan-page{height:calc(100vh - 44px);min-height:0}
 /* #endif */

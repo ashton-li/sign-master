@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { PNG } from 'pngjs'
-import { analyzeDocumentImage, detectDocumentBounds, detectPaperQuad, detectSignatureLines, scanDocumentImage, stabilizeDocumentQuad, warpPerspectivePixels, warpPerspectivePixelsAsync } from '../../src/core/vision/documentScanner'
+import { analyzeDocumentImage, cropImageToGuideFrame, detectDocumentBounds, detectPaperQuad, detectSignatureLines, mapGuideFrameToImageCrop, scanDocumentImage, stabilizeDocumentQuad, warpPerspectivePixels, warpPerspectivePixelsAsync } from '../../src/core/vision/documentScanner'
 
 function image(width, height, color = 230) {
   const data = new Uint8ClampedArray(width * height * 4)
@@ -418,5 +418,66 @@ describe('document scanner', () => {
     expect(result.width).toBeLessThanOrEqual(previewWidth)
     expect(result.height).toBeLessThanOrEqual(previewHeight)
     expect(resizeCalls).not.toContainEqual({ width:sourceWidth, height:sourceHeight })
+  })
+
+  it('maps the visible guide through an aspect-fill camera preview', () => {
+    const crop = mapGuideFrameToImageCrop(3000, 4000, {
+      previewWidth:390,
+      previewHeight:844,
+      x:0.09,
+      y:0.18,
+      width:0.82,
+      height:0.55
+    })
+
+    expect(crop.x).toBeGreaterThanOrEqual(0)
+    expect(crop.y).toBeGreaterThanOrEqual(0)
+    expect(crop.x + crop.width).toBeLessThanOrEqual(3000)
+    expect(crop.y + crop.height).toBeLessThanOrEqual(4000)
+    expect(crop.width / crop.height).toBeCloseTo((0.82 * 390) / (0.55 * 844), 2)
+  })
+
+  it('crops the original photo at source resolution without perspective resampling', async () => {
+    const drawCalls = []
+    const resizeCalls = []
+    const exportOptions = []
+    const context = {
+      drawImage(...args) { drawCalls.push(args) },
+      draw(_reserve, callback) { callback() }
+    }
+    const uniApi = {
+      getImageInfo({ success }) { success({ width:3000, height:4000 }) },
+      createCanvasContext() { return context },
+      canvasToTempFilePath(options) {
+        exportOptions.push(options)
+        options.success({ tempFilePath:'/guide-crop.jpg' })
+      },
+      getStorageInfoSync() { return { currentSize:0, limitSize:10240 } }
+    }
+    const guide = { previewWidth:390, previewHeight:844, x:0.09, y:0.18, width:0.82, height:0.55 }
+    const expected = mapGuideFrameToImageCrop(3000, 4000, guide)
+    const result = await cropImageToGuideFrame({ name:'photo.jpg', path:'/photo.jpg', kind:'image' }, guide, {
+      uniApi,
+      quality:1,
+      canvasFlushDelay:0,
+      resizeCanvas:async (width, height) => resizeCalls.push({ width, height })
+    })
+
+    expect(drawCalls).toEqual([['/photo.jpg', -expected.x, -expected.y, 3000, 4000]])
+    expect(resizeCalls).toEqual([{ width:expected.width, height:expected.height }])
+    expect(exportOptions[0]).toMatchObject({
+      width:expected.width,
+      height:expected.height,
+      destWidth:expected.width,
+      destHeight:expected.height,
+      quality:1,
+      fileType:'jpg'
+    })
+    expect(result).toMatchObject({
+      path:'/guide-crop.jpg',
+      width:expected.width,
+      height:expected.height,
+      scanResolutionMode:'source-direct'
+    })
   })
 })
