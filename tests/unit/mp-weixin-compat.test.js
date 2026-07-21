@@ -82,6 +82,10 @@ describe('mp-weixin compatibility guards', () => {
     expect(readText('src/pages/sign/preview.vue')).toContain('shareFileMessage')
     expect(readText('src/pages/sign/preview.vue')).toContain('showShareImageMenu')
     expect(readText('src/pages/sign/preview.vue')).toContain("['jpg', 'jpeg', 'png'].includes(exportedFormat.value)")
+    expect(readText('src/pages/sign/preview.vue')).toContain('scheduleSharePreparation')
+    expect(readText('src/pages/sign/preview.vue')).toContain("generateExport({ present:false, record:false, silent:true })")
+    expect(readText('src/pages/sign/preview.vue')).toContain('function handleShare()')
+    expect(readText('src/pages/sign/preview.vue')).not.toContain('async function handleShare()')
   })
 
   it('uses a distinct signature-library icon and packages backup recovery', () => {
@@ -127,7 +131,7 @@ describe('mp-weixin compatibility guards', () => {
     expect(signPage).toContain('@tap.stop="handleSlotActivate(slot)"')
     expect(previewPage).toContain("[{ value: 'jpg', label: 'JPEG'")
     expect(previewPage).not.toContain("title: '文件已生成'")
-    expect(previewPage).toMatch(/generateExport\(\{ present: false[\s\S]*shareCurrentFile\(\)/)
+    expect(previewPage).toMatch(/function handleShare\(\)[\s\S]*shareCurrentFile\(\)[\s\S]*recordPreparedExport\(\)/)
   })
 
   it('packages independent capacity/about pages and keeps mini-program scanning lightweight', () => {

@@ -28,12 +28,12 @@
       <view class="export-panel">
         <view class="format-head"><text class="format-title">导出格式</text><text class="format-note">全程仅在本机处理</text></view>
         <view class="format-row">
-          <button v-for="format in formats" :key="format.value" class="format-btn" :class="{ active: signingStore.exportFormat === format.value }" @click="handleFormatChange(format.value)"><SvgIcon :name="format.icon" :size="20" :color="signingStore.exportFormat === format.value ? '#5856e0' : '#8d91a2'" /><text>{{ format.label }}</text></button>
+          <button v-for="format in formats" :key="format.value" class="format-btn" :class="{ active: signingStore.exportFormat === format.value }" :disabled="exporting" @click="handleFormatChange(format.value)"><SvgIcon :name="format.icon" :size="20" :color="signingStore.exportFormat === format.value ? '#5856e0' : '#8d91a2'" /><text>{{ format.label }}</text></button>
         </view>
         <view v-if="statusText" :class="['export-status', { error: exportError }]">{{ statusText }}</view>
         <view class="export-actions">
           <button class="primary-btn" :disabled="exporting" @click="handleExport"><SvgIcon name="save" :size="20" color="#ffffff" /><text>{{ exporting ? '正在生成…' : '导出文件' }}</text></button>
-          <button class="share-btn" :disabled="exporting" @click="handleShare"><SvgIcon name="share" :size="20" /><text>{{ exporting ? '正在生成' : '分享好友' }}</text></button>
+          <button class="share-btn" :disabled="exporting || sharePreparing" @click="handleShare"><SvgIcon name="share" :size="20" /><text>{{ sharePreparing ? '准备分享…' : '分享好友' }}</text></button>
           <button class="home-button" @click="handleHome"><SvgIcon name="arrowLeft" :size="19" color="#c75d28" /><text>回到首页</text></button>
         </view>
       </view>
@@ -44,7 +44,7 @@
 
 <script setup>
 import { computed, getCurrentInstance, nextTick, reactive, ref } from 'vue'
-import { onLoad } from '@dcloudio/uni-app'
+import { onLoad, onReady } from '@dcloudio/uni-app'
 import PageShell from '../../components/PageShell.vue'
 import SignatureInk from '../../components/SignatureInk.vue'
 import SvgIcon from '../../components/SvgIcon.vue'
@@ -69,6 +69,7 @@ const statusText = ref('')
 const exportedPath = ref('')
 const exportedName = ref('')
 const exportedFormat = ref('')
+const sharePreparing = ref(false)
 const signatureSaved = ref(false)
 const previewPage = ref(signingStore.document?.page || 1)
 const exportSize = reactive({ width: 1200, height: 1600 })
@@ -79,10 +80,21 @@ const currentPageInfo = computed(() => signingStore.document?.pages?.[Math.max(0
 const currentPagePath = computed(() => currentPageInfo.value?.path || signingStore.document?.path || '')
 const currentPagePreview = computed(() => currentPageInfo.value?.previewPath || (signingStore.document?.kind === 'image' ? currentPagePath.value : ''))
 const currentPageLayers = computed(() => signingStore.layers.filter((layer) => !layer.page || layer.page === previewPage.value))
+let sharePreparationPromise = null
+let recordedExportKey = ''
 
 onLoad(() => {
   const firstFormat = formats.value[0]?.value
   if (firstFormat) signingStore.exportFormat = firstFormat
+  // #ifdef MP-WEIXIN
+  sharePreparing.value = true
+  // #endif
+})
+
+onReady(() => {
+  // #ifdef MP-WEIXIN
+  scheduleSharePreparation()
+  // #endif
 })
 
 function layerStyle(layer) {
@@ -118,11 +130,15 @@ function handleSaveSignature() {
 }
 
 function handleFormatChange(format) {
-  if (signingStore.exportFormat === format) return
+  if (exporting.value || signingStore.exportFormat === format) return
   signingStore.exportFormat = format
   exportedPath.value = ''
   exportedName.value = ''
   exportedFormat.value = ''
+  // #ifdef MP-WEIXIN
+  sharePreparing.value = true
+  scheduleSharePreparation()
+  // #endif
 }
 
 async function generateExport(options = {}) {
@@ -161,29 +177,8 @@ async function generateExport(options = {}) {
     exportedPath.value = outputPath || signingStore.document.path
     exportedName.value = manifest.fileName
     exportedFormat.value = manifest.format
-    if (options.record !== false) saveProvenanceRecord({ documentId:signingStore.document.id, fileName:manifest.fileName, path:exportedPath.value, format:manifest.format, layers:signingStore.layers })
-    if (options.record !== false && readLocal('save-signed-files', true)) {
-      const fileRecord = {
-        sourceId: signingStore.document.id,
-        path: outputPath || signingStore.document.path
-      }
-      if (!await filesStore.requestCapacity(fileRecord)) return exportedPath.value
-      const thumbnail = await createSignedThumbnail()
-      filesStore.addSignedFile({
-        name: manifest.fileName.replace(/\.[^.]+$/, ''),
-        fileName: manifest.fileName,
-        sourceId: signingStore.document.id,
-        path: outputPath || signingStore.document.path,
-        kind: manifest.format === 'pdf' ? 'pdf' : 'image',
-        extension: manifest.format,
-        thumbnail,
-        signatures: signingStore.layers.length,
-        project: signingStore.getProjectSnapshot()
-      })
-      if (!options.silent) setStatus(options.message || '导出完成，文件已保存在本机')
-    } else {
-      if (!options.silent) setStatus(options.message || '导出完成')
-    }
+    if (options.record !== false) await recordExportResult(manifest, outputPath, options)
+    else if (!options.silent) setStatus(options.message || '导出完成')
     exportDone.value = true
     return exportedPath.value
   } catch (error) {
@@ -193,11 +188,100 @@ async function generateExport(options = {}) {
   }
 }
 
-function handleExport() {
-  return generateExport({ present: true, record: true })
+async function recordExportResult(manifest, outputPath, options = {}) {
+  const path = outputPath || signingStore.document.path
+  const recordKey = `${manifest.format}:${path}`
+  if (recordedExportKey === recordKey) {
+    if (!options.silent) setStatus(options.message || '导出完成')
+    return
+  }
+  recordedExportKey = recordKey
+  try {
+    saveProvenanceRecord({ documentId:signingStore.document.id, fileName:manifest.fileName, path, format:manifest.format, layers:signingStore.layers })
+    if (readLocal('save-signed-files', true)) {
+      const fileRecord = { sourceId:signingStore.document.id, path }
+      if (!await filesStore.requestCapacity(fileRecord)) {
+        recordedExportKey = ''
+        return
+      }
+      const thumbnail = await createSignedThumbnail()
+      filesStore.addSignedFile({
+        name:manifest.fileName.replace(/\.[^.]+$/, ''),
+        fileName:manifest.fileName,
+        sourceId:signingStore.document.id,
+        path,
+        kind:manifest.format === 'pdf' ? 'pdf' : 'image',
+        extension:manifest.format,
+        thumbnail,
+        signatures:signingStore.layers.length,
+        project:signingStore.getProjectSnapshot()
+      })
+      if (!options.silent) setStatus(options.message || '导出完成，文件已保存在本机')
+    } else if (!options.silent) {
+      setStatus(options.message || '导出完成')
+    }
+  } catch (error) {
+    if (recordedExportKey === recordKey) recordedExportKey = ''
+    throw error
+  }
 }
 
-async function handleShare() {
+async function handleExport() {
+  let hasPreparedFile = false
+  // #ifdef MP-WEIXIN
+  hasPreparedFile = Boolean(exportedPath.value && exportedFormat.value === signingStore.exportFormat)
+  // #endif
+  if (!hasPreparedFile) return generateExport({ present:true, record:true })
+  exporting.value = true
+  setStatus('')
+  try {
+    // #ifdef MP-WEIXIN
+    if (exportedFormat.value === 'pdf') {
+      await new Promise((resolve, reject) => uni.openDocument({ filePath:exportedPath.value, showMenu:true, success:resolve, fail:reject }))
+    } else {
+      await presentExportedImage(exportedPath.value, exportedName.value)
+    }
+    // #endif
+    const manifest = { fileName:exportedName.value, format:exportedFormat.value }
+    await recordExportResult(manifest, exportedPath.value, { message:'导出完成，已复用准备好的文件' })
+    exportDone.value = true
+    return exportedPath.value
+  } catch (error) {
+    setStatus(`导出失败：${error?.message || error?.errMsg || '未知错误'}`, true)
+  } finally {
+    exporting.value = false
+  }
+}
+
+function scheduleSharePreparation() {
+  if (sharePreparationPromise) return sharePreparationPromise
+  sharePreparing.value = true
+  sharePreparationPromise = new Promise((resolve) => setTimeout(resolve, 80))
+    .then(() => prepareShareArtifact())
+    .finally(() => {
+      sharePreparing.value = false
+      sharePreparationPromise = null
+    })
+  return sharePreparationPromise
+}
+
+async function prepareShareArtifact() {
+  if (exportedPath.value && exportedFormat.value === signingStore.exportFormat) return exportedPath.value
+  const filePath = await generateExport({ present:false, record:false, silent:true })
+  if (!filePath) setStatus('分享文件准备失败，请点击导出文件后重试', true)
+  return filePath
+}
+
+function recordPreparedExport() {
+  if (!exportedPath.value || !exportedFormat.value || !exportedName.value) return
+  const outputPath = exportedPath.value
+  const manifest = { fileName:exportedName.value, format:exportedFormat.value }
+  setTimeout(() => {
+    recordExportResult(manifest, outputPath, { silent:true }).catch(() => {})
+  }, 0)
+}
+
+function handleShare() {
   // #ifdef MP-WEIXIN
   const imageFormat = ['jpg', 'jpeg', 'png'].includes(signingStore.exportFormat)
   const supported = typeof wx !== 'undefined' && (imageFormat
@@ -207,13 +291,17 @@ async function handleShare() {
     uni.showModal({ title: '当前微信版本不支持', content: '请升级微信后使用“分享好友”，或先导出后在文件预览菜单中分享。', showCancel: false })
     return
   }
-  if (exportedPath.value && exportedFormat.value === signingStore.exportFormat) {
-    shareCurrentFile()
+  if (sharePreparing.value) {
+    setStatus('分享文件正在准备，请稍候', false)
     return
   }
-  const filePath = await generateExport({ present: false, record: true, message: '分享文件已生成' })
-  if (!filePath) return
+  if (!exportedPath.value || exportedFormat.value !== signingStore.exportFormat) {
+    setStatus('分享文件尚未准备完成，请稍候再试', false)
+    scheduleSharePreparation()
+    return
+  }
   shareCurrentFile()
+  recordPreparedExport()
   // #endif
   // #ifndef MP-WEIXIN
   setStatus('浏览器不支持微信文件直发，请在微信小程序中使用', true)
