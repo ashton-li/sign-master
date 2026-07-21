@@ -82,8 +82,11 @@ describe('mp-weixin compatibility guards', () => {
     expect(readText('src/pages/sign/preview.vue')).toContain('shareFileMessage')
     expect(readText('src/pages/sign/preview.vue')).toContain('showShareImageMenu')
     expect(readText('src/pages/sign/preview.vue')).toContain("['jpg', 'jpeg', 'png'].includes(exportedFormat.value)")
-    expect(readText('src/pages/sign/preview.vue')).toContain('scheduleSharePreparation')
+    expect(readText('src/pages/sign/preview.vue')).not.toContain('scheduleSharePreparation')
+    expect(readText('src/pages/sign/preview.vue')).not.toContain('onReady(')
     expect(readText('src/pages/sign/preview.vue')).toContain("generateExport({ present:false, record:false, silent:true })")
+    expect(readText('src/pages/sign/preview.vue')).toContain('generateShareOnDemand()')
+    expect(readText('src/pages/sign/preview.vue')).toContain('分享文件已生成，请再次点击“发送给好友”')
     expect(readText('src/pages/sign/preview.vue')).toContain('function handleShare()')
     expect(readText('src/pages/sign/preview.vue')).not.toContain('async function handleShare()')
   })
@@ -132,6 +135,7 @@ describe('mp-weixin compatibility guards', () => {
     expect(previewPage).toContain("[{ value: 'jpg', label: 'JPEG'")
     expect(previewPage).not.toContain("title: '文件已生成'")
     expect(previewPage).toMatch(/function handleShare\(\)[\s\S]*shareCurrentFile\(\)[\s\S]*recordPreparedExport\(\)/)
+    expect(previewPage).toContain("shareReady.value ? '发送给好友' : '分享好友'")
   })
 
   it('packages independent capacity/about pages and keeps mini-program scanning lightweight', () => {

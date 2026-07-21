@@ -521,7 +521,13 @@ test('keeps support content reachable and shows the exact app identity and filin
 
   await page.goto('/#/subpackages/settings/about')
   await expect(page.locator('.app-logo img')).toHaveAttribute('src', /static\/app-logo\.png/)
-  await expect(page.getByText('闽ICP备2026014225号-3X', { exact:true })).toBeVisible()
+  const aboutSupport = page.locator('.support-section')
+  await aboutSupport.scrollIntoViewIfNeeded()
+  await expect(aboutSupport.locator('.support-code img')).toHaveAttribute('src', /static\/support-qrcode\.jpg/)
+  await expect(page.getByText('关注公众号后发送反馈与支持需求。', { exact:false })).toBeVisible()
+  const aboutFiling = page.getByText('闽ICP备2026014225号-3X', { exact:true })
+  await aboutFiling.scrollIntoViewIfNeeded()
+  await expect(aboutFiling).toBeVisible()
 
   await page.goto('/#/pages/settings/index')
   const filing = page.getByText('闽ICP备2026014225号-3X', { exact:true })

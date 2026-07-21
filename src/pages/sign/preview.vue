@@ -33,7 +33,7 @@
         <view v-if="statusText" :class="['export-status', { error: exportError }]">{{ statusText }}</view>
         <view class="export-actions">
           <button class="primary-btn" :disabled="exporting" @click="handleExport"><SvgIcon name="save" :size="20" color="#ffffff" /><text>{{ exporting ? '正在生成…' : '导出文件' }}</text></button>
-          <button class="share-btn" :disabled="exporting || sharePreparing" @click="handleShare"><SvgIcon name="share" :size="20" /><text>{{ sharePreparing ? '准备分享…' : '分享好友' }}</text></button>
+          <button class="share-btn" :disabled="exporting" @click="handleShare"><SvgIcon name="share" :size="20" /><text>{{ shareButtonText }}</text></button>
           <button class="home-button" @click="handleHome"><SvgIcon name="arrowLeft" :size="19" color="#c75d28" /><text>回到首页</text></button>
         </view>
       </view>
@@ -44,7 +44,7 @@
 
 <script setup>
 import { computed, getCurrentInstance, nextTick, reactive, ref } from 'vue'
-import { onLoad, onReady } from '@dcloudio/uni-app'
+import { onLoad } from '@dcloudio/uni-app'
 import PageShell from '../../components/PageShell.vue'
 import SignatureInk from '../../components/SignatureInk.vue'
 import SvgIcon from '../../components/SvgIcon.vue'
@@ -69,7 +69,6 @@ const statusText = ref('')
 const exportedPath = ref('')
 const exportedName = ref('')
 const exportedFormat = ref('')
-const sharePreparing = ref(false)
 const signatureSaved = ref(false)
 const previewPage = ref(signingStore.document?.page || 1)
 const exportSize = reactive({ width: 1200, height: 1600 })
@@ -80,21 +79,13 @@ const currentPageInfo = computed(() => signingStore.document?.pages?.[Math.max(0
 const currentPagePath = computed(() => currentPageInfo.value?.path || signingStore.document?.path || '')
 const currentPagePreview = computed(() => currentPageInfo.value?.previewPath || (signingStore.document?.kind === 'image' ? currentPagePath.value : ''))
 const currentPageLayers = computed(() => signingStore.layers.filter((layer) => !layer.page || layer.page === previewPage.value))
-let sharePreparationPromise = null
+const shareReady = computed(() => Boolean(exportedPath.value && exportedFormat.value === signingStore.exportFormat))
+const shareButtonText = computed(() => exporting.value ? '正在生成…' : (shareReady.value ? '发送给好友' : '分享好友'))
 let recordedExportKey = ''
 
 onLoad(() => {
   const firstFormat = formats.value[0]?.value
   if (firstFormat) signingStore.exportFormat = firstFormat
-  // #ifdef MP-WEIXIN
-  sharePreparing.value = true
-  // #endif
-})
-
-onReady(() => {
-  // #ifdef MP-WEIXIN
-  scheduleSharePreparation()
-  // #endif
 })
 
 function layerStyle(layer) {
@@ -135,10 +126,6 @@ function handleFormatChange(format) {
   exportedPath.value = ''
   exportedName.value = ''
   exportedFormat.value = ''
-  // #ifdef MP-WEIXIN
-  sharePreparing.value = true
-  scheduleSharePreparation()
-  // #endif
 }
 
 async function generateExport(options = {}) {
@@ -253,23 +240,10 @@ async function handleExport() {
   }
 }
 
-function scheduleSharePreparation() {
-  if (sharePreparationPromise) return sharePreparationPromise
-  sharePreparing.value = true
-  sharePreparationPromise = new Promise((resolve) => setTimeout(resolve, 80))
-    .then(() => prepareShareArtifact())
-    .finally(() => {
-      sharePreparing.value = false
-      sharePreparationPromise = null
-    })
-  return sharePreparationPromise
-}
-
-async function prepareShareArtifact() {
-  if (exportedPath.value && exportedFormat.value === signingStore.exportFormat) return exportedPath.value
+async function generateShareOnDemand() {
   const filePath = await generateExport({ present:false, record:false, silent:true })
-  if (!filePath) setStatus('分享文件准备失败，请点击导出文件后重试', true)
-  return filePath
+  if (filePath) setStatus('分享文件已生成，请再次点击“发送给好友”')
+  else setStatus('分享文件生成失败，请重试', true)
 }
 
 function recordPreparedExport() {
@@ -291,13 +265,8 @@ function handleShare() {
     uni.showModal({ title: '当前微信版本不支持', content: '请升级微信后使用“分享好友”，或先导出后在文件预览菜单中分享。', showCancel: false })
     return
   }
-  if (sharePreparing.value) {
-    setStatus('分享文件正在准备，请稍候', false)
-    return
-  }
   if (!exportedPath.value || exportedFormat.value !== signingStore.exportFormat) {
-    setStatus('分享文件尚未准备完成，请稍候再试', false)
-    scheduleSharePreparation()
+    generateShareOnDemand()
     return
   }
   shareCurrentFile()

@@ -27,8 +27,10 @@ for (const path of files(root)) {
   })
 }
 const help = readFileSync(new URL('../src/subpackages/settings/help.vue', import.meta.url), 'utf8')
+const about = readFileSync(new URL('../src/subpackages/settings/about.vue', import.meta.url), 'utf8')
 const privacy = readFileSync(new URL('../src/subpackages/settings/privacy.vue', import.meta.url), 'utf8')
 if (!help.includes('VITE_CONTACT_EMAIL') || !help.includes('support-qrcode.jpg')) errors.push('帮助页缺少邮箱或公众号支持入口')
+if (!about.includes('VITE_CONTACT_EMAIL') || !about.includes('support-qrcode.jpg')) errors.push('关于页缺少邮箱或公众号支持入口')
 if (!privacy.includes('不上传至签字大师的业务服务器') || !privacy.includes('不构成实名身份认证')) errors.push('隐私说明缺少数据边界或鉴别声明')
 if (errors.length) {
   console.error(errors.join('\n'))
